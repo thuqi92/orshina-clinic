@@ -232,6 +232,8 @@ body:has(#modal:not([hidden])){overflow:hidden}
 .seg span{display:inline-block;padding:7px 14px;border-radius:999px;border:1px solid var(--line);font-weight:500}
 .seg input:checked + span{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .seg input:focus-visible + span{outline:2px solid var(--accent);outline-offset:2px}
+.seg.areas{gap:6px}
+.seg.areas span{padding:6px 12px;font-size:.88rem;background:var(--surface)}
 .sect{display:none;padding:12px;border-radius:12px;background:var(--surface-2)}
 #mform[data-type="dental"] .f-dental,#mform[data-type="injection"] .f-injection,#mform[data-type="laser"] .f-laser,#mform[data-type="skin"] .f-skin{display:grid}
 #mform:not([data-newp="1"]) .f-new{display:none}
@@ -329,6 +331,8 @@ const LOWER=[48,47,46,45,44,43,42,41,31,32,33,34,35,36,37,38];
 const VALID_T=new Set([...UPPER,...LOWER]);
 const D_PROC=['فحص','تنظيف','حشوة','حشوة تجميلية','حشوة عصب','قلع','تاج','زراعة','تبييض','تقويم','أشعة','فينير'];
 const D_PRODUCT=['بوتوكس','فيلر','ميزوثيرابي','بلازما PRP','خيوط','سكن بوستر','إذابة دهون'];
+const LASER_AREAS=['وجه كامل','نص وجه','شارب','ذقن','رقبة','ابط','نص ايد','ايد كاملة','صدر','بطن','ظهر','بكيني','بكيني وصل','فخذ','نص ساق','رجل كاملة','فل بدي','فل بدي عدا بطن وظهر'];
+const splitAreas=a=>String(a||'').split(/\s*(?:\+|،|,|\/)\s*/).map(x=>x.trim()).filter(Boolean);
 const D_AREA=['جبهة','بين الحاجبين','حول العين','هالات','شفايف','خدود','فك','ذقن','أنف','رقبة','إبط','وجه كامل','ساقين','ذراعين','ظهر','بكيني','جسم كامل'];
 const D_SKIN=['هيدرافيشل','تنظيف عميق','تقشير كيميائي','ديرمابن','كاربون بيل','أكسجين','نضارة'];
 const D_EXP=['مواد','أدوات','صيانة أجهزة','إيجار','كهرباء ومولدة','إعلانات','أخرى'];
@@ -768,7 +772,9 @@ function visitForm(v={},edit){
   <div class="sect f-laser grid2"><span class="sect-t">تفاصيل جلسة الليزر</span>
    ${f('الجهاز',`<select name="device">${opts(devs.map(x=>[x.id,x.name]),d.device||(S.dev!=='all'?S.dev:devs[0]?.id))}</select>`)}${f('الأوبريتر',`<select name="lop">${empOpts(type==='laser'&&d.operator?d.operator:myOp)}</select>`)}
    ${f('عدد الضربات',`<input name="shots" inputmode="numeric" dir="ltr" value="${val(d.shots)}">`)}${f('الطاقة',`<input name="energy" dir="ltr" placeholder="مثلاً 18 J" value="${val(d.energy)}">`)}
-   ${f('المنطقة',`<input name="larea" list="dl-area" value="${type==='laser'?val(d.area):''}">`)}<div class="grid2">${f('رقم الجلسة',`<input name="sessionNo" inputmode="numeric" value="${val(d.sessionNo)}">`)}${f('من مجموع',`<input name="sessionTotal" inputmode="numeric" value="${val(d.sessionTotal)}">`)}</div>
+   ${(()=>{const cur=type==='laser'?splitAreas(d.area):[];const other=cur.filter(x=>!LASER_AREAS.includes(x));
+      return `<div class="fld full"><span>المناطق (تكدر تختار أكثر من وحدة)</span><div class="seg areas" role="group" aria-label="مناطق الليزر">${LASER_AREAS.map((a,i)=>`<label><input type="checkbox" name="lz_${i}" value="${esc(a)}" ${cur.includes(a)?'checked':''}><span>${esc(a)}</span></label>`).join('')}</div></div>
+      ${f('منطقة غيرها',`<input name="larea" placeholder="اكتبها إذا مو موجودة فوق" value="${esc(other.join(' + '))}">`)}`})()}<div class="grid2">${f('رقم الجلسة',`<input name="sessionNo" inputmode="numeric" value="${val(d.sessionNo)}">`)}${f('من مجموع',`<input name="sessionTotal" inputmode="numeric" value="${val(d.sessionTotal)}">`)}</div>
    ${f('الجلسة الجاية',`<input type="date" name="nextLaser" value="${type==='laser'?val(d.next):''}">`)}</div>
   <div class="sect f-injection grid3"><span class="sect-t">تفاصيل الحقن</span>
    ${f('المادة',`<input name="product" list="dl-product" value="${val(d.product)}">`)}${f('الشركة',`<input name="brand" list="dl-brand" dir="auto" value="${val(d.brand)}">`)}${f('المنطقة',`<input name="iarea" list="dl-area" value="${type==='injection'?val(d.area):''}">`)}
@@ -801,7 +807,7 @@ function parseTeeth(s){return uniq(String(s||'').split(/[^0-9]+/)).map(Number).f
 async function saveVisit(o,appt,ed){
   const type=o.type;let d={};const keep=!!ed;
   if(type==='dental')d={procedure:o.procedure.trim(),teeth:parseTeeth(o.teeth).join(', ')};
-  else if(type==='laser'){const sn=o.sessionNo.trim()||(!ed&&$('#mform [name=sessionNo]')?.placeholder)||'';d={device:o.device,operator:o.lop,shots:o.shots.trim(),energy:o.energy.trim(),area:o.larea.trim(),sessionNo:sn,sessionTotal:o.sessionTotal.trim(),next:o.nextLaser||''}}
+  else if(type==='laser'){const sn=o.sessionNo.trim()||(!ed&&$('#mform [name=sessionNo]')?.placeholder)||'';d={device:o.device,operator:o.lop,shots:o.shots.trim(),energy:o.energy.trim(),area:[...Object.keys(o).filter(k=>/^lz_\d+$/.test(k)).sort((a,b)=>+a.slice(3)-+b.slice(3)).map(k=>o[k]),...splitAreas(o.larea)].join(' + '),sessionNo:sn,sessionTotal:o.sessionTotal.trim(),next:o.nextLaser||''}}
   else if(type==='injection')d={product:o.product.trim(),brand:o.brand.trim(),area:o.iarea.trim(),amount:o.amount.trim(),unit:o.unit,batch:o.batch.trim(),next:o.nextInj||''};
   else if(type==='skin')d={kind:o.kind.trim(),skinType:o.skinType,operator:o.sop,next:o.nextSkin||''};
   if(!keep)Object.keys(d).forEach(k=>{if(d[k]==='')delete d[k]});
