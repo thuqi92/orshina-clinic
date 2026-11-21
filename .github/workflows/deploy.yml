@@ -30,7 +30,7 @@ jobs:
       - name: Deploy Firestore security rules
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
-        run: npx -y firebase-tools@13 deploy --only firestore:rules,firestore:indexes --project orshina-clinic --non-interactive
+        run: npx -y firebase-tools@13 deploy --only firestore:rules --project orshina-clinic --non-interactive
       - name: Remove credentials
         if: always()
         run: rm -f "$RUNNER_TEMP/sa.json"
