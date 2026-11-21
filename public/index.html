@@ -1043,7 +1043,7 @@ function importPanel(){
   if(S.userDoc?.role!=='owner')return '';const m=D('meta/import');if(m===undefined||m?.done)return '';
   const pct=IMPF.total?Math.floor(IMPF.done/IMPF.total*100):0;
   return `<section class="panel" id="importPanel" style="border-color:var(--accent)"><div class="ph"><h2>نقل البيانات من النسخة القديمة</h2></div>
-   <p class="muted" style="margin:0 0 10px">اختار ملف البيانات اللي استلمته (orshina-data.json). خلي الصفحة مفتوحة لحد ما يخلص. إذا انقطع، اختار نفس الملف مرة ثانية ويكمّل من مكانه.</p>
+   <p class="muted" style="margin:0 0 10px">اختار ملف البيانات اللي استلمته (orshina-data.json). خلي الصفحة مفتوحة لحد ما يخلص. بعد الزبائن يرفع حسابات الأقسام، وهاي ملفات أكبر فتتحرك أبطأ. إذا انقطع، اختار نفس الملف مرة ثانية ويكمّل من مكانه.</p>
    ${IMPF.running?'':'<input type="file" id="impFile" accept=".json,application/json" class="btn">'}
    <div style="height:12px;background:var(--surface-2);border-radius:999px;overflow:hidden;margin-top:10px"><div id="impBar2" style="height:100%;width:${pct}%;background:var(--accent)"></div></div>
    <p class="small" id="impTxt2" style="margin:8px 0 0">${IMPF.running?`جاري النقل: ${IMPF.done.toLocaleString('en-US')} من ${IMPF.total.toLocaleString('en-US')}`:'جاهز'}</p>
@@ -1057,11 +1057,16 @@ document.addEventListener('change',async e=>{
   try{
     const data=JSON.parse(await file.text());const items=data.docs||[];IMPF.total=items.length;
     let i=0;try{i=+(localStorage.getItem(key)||0)}catch(x){}IMPF.done=i;
+    const enc=new TextEncoder();
     while(i<items.length){
-      const b=fdb.batch();let ops=0,bytes=0;
-      while(i<items.length&&ops<400){const [path,doc,mode]=items[i];const sz=JSON.stringify(doc).length;if(ops&&bytes+sz>3500000)break;
+      const b=fdb.batch();let ops=0,bytes=0;const start=i;
+      // small batches (≤ ~600 KB, ≤ 250 docs) so slow connections keep moving
+      while(i<items.length&&ops<250){const [path,doc,mode]=items[i];const sz=enc.encode(JSON.stringify(doc)).length;if(ops&&bytes+sz>600000)break;
         b.set(fdb.doc(path),doc,mode==='merge'?{merge:true}:{});ops++;bytes+=sz;i++}
-      let tries=0;for(;;){try{await b.commit();break}catch(x){if(++tries>6||x.code==='permission-denied')throw x;await new Promise(r=>setTimeout(r,800*2**tries))}}
+      let tries=0;for(;;){try{await Promise.race([b.commit(),new Promise((_,rej)=>setTimeout(()=>rej({code:'timeout'}),120000))]);break}
+        catch(x){if(x.code==='permission-denied'||x.code==='invalid-argument'||++tries>8){if(x.code==='timeout')x.message='الاتصال بطيء جداً';throw x}
+          const t=document.getElementById('impTxt2');if(t)t.textContent=`الاتصال بطيء، نعيد المحاولة… (${start.toLocaleString('en-US')} من ${items.length.toLocaleString('en-US')})`;
+          await new Promise(r=>setTimeout(r,1500*tries))}}
       IMPF.done=i;try{localStorage.setItem(key,String(i))}catch(x){}
       const bar=document.getElementById('impBar2'),t=document.getElementById('impTxt2');if(bar)bar.style.width=Math.floor(i/items.length*100)+'%';if(t)t.textContent=`جاري النقل: ${i.toLocaleString('en-US')} من ${items.length.toLocaleString('en-US')}`;
     }
