@@ -1,0 +1,8 @@
+node_modules/
+*.log
+.firebase/
+# never commit credentials or patient data
+*service-account*.json
+*-firebase-adminsdk-*.json
+orshina-data*.json
+data/

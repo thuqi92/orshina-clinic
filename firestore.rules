@@ -1,0 +1,59 @@
+rules_version = '2';
+
+// Orshina clinic — who can read/write what.
+// Roles live in users/{uid}.role: owner | admin | operator | none.
+//   owner/admin : everything
+//   operator    : laser + skin-care work (patients, search index, appointments,
+//                 and the laser_/skin_ department books). No salaries, no other
+//                 departments' books, no settings changes.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function userPath() { return /databases/$(database)/documents/users/$(request.auth.uid); }
+    function role() { return signedIn() && exists(userPath()) ? get(userPath()).data.role : 'none'; }
+    function isOwner() { return role() == 'owner'; }
+    function isAdmin() { return role() in ['owner', 'admin']; }
+    function isOperator() { return role() == 'operator'; }
+    function isStaff() { return isAdmin() || isOperator(); }
+
+    // First-run setup: anyone may check whether setup is done; the very first
+    // account may create itself as owner together with this marker.
+    match /meta/setup {
+      allow read: if true;
+      allow create: if signedIn()
+        && !exists(/databases/$(database)/documents/meta/setup)
+        && getAfter(userPath()).data.role == 'owner';
+    }
+    match /meta/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      // bootstrap the owner (only before setup exists)
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.role == 'owner'
+        && !exists(/databases/$(database)/documents/meta/setup);
+      // the owner manages every account
+      allow create, update, delete: if isOwner();
+      // admins manage staff accounts, but never an owner and never themselves
+      allow create, update: if isAdmin() && uid != request.auth.uid
+        && request.resource.data.role in ['admin', 'operator', 'none']
+        && (resource == null || resource.data.role != 'owner');
+    }
+
+    match /employees/{id}  { allow read: if isStaff(); allow write: if isAdmin(); }
+    match /empPrivate/{id} { allow read, write: if isAdmin(); }
+    match /settings/{id}   { allow read: if isStaff(); allow write: if isAdmin(); }
+    match /fixedpaid/{id}  { allow read, write: if isAdmin(); }
+
+    match /patients/{id} { allow read, create, update: if isStaff(); allow delete: if isAdmin(); }
+    match /index/{id}    { allow read, create, update: if isStaff(); allow delete: if isAdmin(); }
+    match /days/{id}     { allow read, create, update: if isStaff(); allow delete: if isAdmin(); }
+
+    // Department books: ledger/{dept}_{YYYY-MM}_{a|b|c}, staff pay: ledger/hr_...
+    match /ledger/{id} {
+      allow read, write: if isAdmin() || (isOperator() && id.matches('^(laser|skin)_.*'));
+    }
+  }
+}
