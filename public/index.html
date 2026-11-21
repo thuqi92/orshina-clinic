@@ -262,6 +262,7 @@ body{margin:0;font-size:14px}img{max-width:100%}[hidden]{display:none!important}
         <span class="sep" aria-hidden="true"></span>
         <a href="#finance" data-tab="finance">الحسابات العامة</a>
         <a href="#hr" data-tab="hr">الموظفين</a>
+        <a href="#log" data-tab="log">السجل</a>
       </nav>
       <div class="who" id="who" hidden></div>
     </div>
@@ -329,7 +330,7 @@ const thisMonth=today().slice(0,7);
 const S={db:null,canWrite:true,view:'home',pid:null,eid:null,q:'',dq:'',dev:'all',month:thisMonth,hrFrom:thisMonth+'-01',hrTo:monthEnd(thisMonth),
   index:[],employees:[],settings:[],linkreq:[],pidx:new Map(),uid:null,userReady:false,isOwner:false,role:null,myEmp:null,names:{},got:{},fresh:{},slow:false,err:null,nodb:false};
 const PINNED=['index','employees','settings'];
-const emp=id=>S.employees.find(e=>e.id===id);
+const emp=id=>(S.empAll||S.employees).find(e=>e.id===id);
 const settingsDoc=()=>S.settings.find(x=>x.id==='main')||{};
 const devices=()=>settingsDoc().laserDevices?.length?settingsDoc().laserDevices:DEFAULT_DEVICES;
 const devName=id=>devices().find(d=>d.id===id)?.name||'جهاز غير معروف';
@@ -372,7 +373,7 @@ function entryFor(p){
   const vs=live(p.visits),ps=live(p.payments);const dp={},nx={};
   DK.forEach(k=>{const kv=vs.filter(v=>v.type===k);dp[k]=sumBy(kv,'price')-sumBy(ps.filter(x=>x.dept===k),'amount');
     const last=kv.sort((a,b)=>cmp(b.date,a.date)||(b.createdAt||0)-(a.createdAt||0))[0];nx[k]=last?.d?.next||''});
-  return{n:p.name||'',p:p.phone||'',l:vs.reduce((m,v)=>v.date>m?v.date:m,''),dep:DK.filter(k=>vs.some(v=>v.type===k)),al:p.allergies?1:0,dp,nx};
+  return{del:!!p.del,n:p.name||'',p:p.phone||'',l:vs.reduce((m,v)=>v.date>m?v.date:m,''),dep:DK.filter(k=>vs.some(v=>v.type===k)),al:p.allergies?1:0,dp,nx};
 }
 function pickChunk(){const counts={};S.index.forEach(c=>counts[c.id]=Object.keys(c.items||{}).length);
   const ok=Object.keys(counts).sort().find(k=>counts[k]<CHUNK_MAX);if(ok)return ok;let i=0;while(counts['c'+pad(i)]!==undefined)i++;return 'c'+pad(i)}
@@ -524,6 +525,7 @@ function vPatient(){
   const P_=perm();const backTxt=P_.views.includes('clients')?'→ كل الزبائن':'→ رجوع';
   if(p===undefined)return `<button class="back" data-act="back">${backTxt}</button>${loadingBox()}`;
   if(p===null){S.pid=null;return vClients()}
+  if(p.del)return deletedPatientView(p,backTxt);
   const td=today();const a=age(p);
   const okD=k=>P_.depts.includes(k);
   const vs=live(p.visits).filter(v=>okD(v.type)).sort((x,y)=>cmp(y.date,x.date)||(y.createdAt||0)-(x.createdAt||0));
@@ -669,12 +671,12 @@ function render(){
   if(S.pid)body=vPatient();
   else if(S.eid)body=vEmp();
   else if(DEPTS[S.view])body=vDept(S.view);
-  else body=({home:vHome,clients:vClients,finance:vFinance,hr:vHR}[S.view]||vHome)();
+  else body=({home:vHome,clients:vClients,finance:vFinance,hr:vHR,log:vLog}[S.view]||vHome)();
   main.innerHTML=(S.err?`<div class="banner bad">صار خلل بالاتصال بالبيانات. حدّث الصفحة.</div>`:'')+(S.slow?'<div class="banner">ممكن البيانات المعروضة مو آخر نسخة، الاتصال بطيء.</div>':'')+body;
   syncSubs();
   if(focused==='q'||focused==='dq'){const q=document.getElementById(focused);if(q){q.focus();try{q.setSelectionRange(caret,caret)}catch(e){}}}
 }
-const ROUTES=['home','clients',...DK,'finance','hr'];
+const ROUTES=['home','clients',...DK,'finance','hr','log'];
 function route(){const h=location.hash.replace('#','');const nv=ROUTES.includes(h)?h:'home';if(nv!==S.view){S.dq='';S.dev='all'}S.view=nv;S.pid=null;S.eid=null}
 addEventListener('hashchange',()=>{route();render();scrollTo(0,0)});
 
@@ -734,6 +736,7 @@ async function saveAppt(o,old){
   const rec={pid,n,time:o.time,svc:o.service,st:o.status,note:(o.note||'').trim()};
   await upsert('days/'+o.date,{appts:{[aid]:rec}});
   await S.db.doc('patients/'+pid).update({appts:{[aid]:{date:o.date,time:o.time,svc:o.service,st:o.status}}});
+  return{aid,pid,n};
 }
 async function setApptStatus(aid,date,pid,st){await upsert('days/'+date,{appts:{[aid]:{st}}});if(pid)await S.db.doc('patients/'+pid).update({appts:{[aid]:{st}}}).catch(()=>{})}
 
@@ -781,6 +784,7 @@ function wireVisitForm(form){
     }catch(e){}};
   pq.addEventListener('change',sug);pq.addEventListener('input',sug);sug();
 }
+const vLabel=(type,name,price,date)=>`${DEPTS[type]?.v||'زيارة'} ${deptName(type)} · ${name} · ${money(price)} · ${date}`;
 function parseTeeth(s){return uniq(String(s||'').split(/[^0-9]+/)).map(Number).filter(n=>VALID_T.has(n))}
 
 async function saveVisit(o,appt,ed){
@@ -805,6 +809,7 @@ async function saveVisit(o,appt,ed){
     if(oldK!==newK)await upsert(oldK,{v:{[ed.vid]:{del:true}}});
     await upsert(newK,{v:{[ed.vid]:{pid,n:p.name,date:o.date,d,price,note,createdAt:ca,by:old.by||by,del:false}}});
     for(const x of linked){await upsert(lkey(x.dept,x.date),{p:{[x.id]:{del:true}}});await upsert(lkey(type,x.date),{p:{[x.id]:{pid,n:p.name,amount:x.amount,date:x.date,note:x.note||'',vid:ed.vid,del:false}}})}
+    await logAct('edit','visit',vLabel(type,p.name,price,o.date),{pid,id:ed.vid},old);
     toast('انحفظ التعديل');return;
   }
   const pid=await resolvePid(o);const p=await getPatient(pid);
@@ -819,6 +824,7 @@ async function saveVisit(o,appt,ed){
   await writePatient(pid,patch);
   await upsert(lkey(type,o.date),lpatch);
   if(appt)await upsert('days/'+appt.date,{appts:{[appt.id]:{st:'done'}}});
+  await logAct('add','visit',vLabel(type,p.name,price,o.date)+(paid>0?' · مدفوع '+money(paid):''),{pid,id:vid});
   toast('انحفظت');
 }
 
@@ -844,16 +850,19 @@ const A={
   'open-patient'(el){S.pid=el.dataset.id;S.eid=null;if(perm().views.includes('clients')){S.view='clients';if(location.hash!=='#clients')history.replaceState(null,'','#clients')}closeModal();render();scrollTo(0,0)},
   dev(el){S.dev=el.dataset.id;render()},
   period(el){const m=el.dataset.p==='month'?thisMonth:addMonths(thisMonth,-1);S.hrFrom=m+'-01';S.hrTo=monthEnd(m);render()},
-  'new-patient'(){openModal({title:'زبون جديد',body:patientForm(),onSubmit:async o=>{const pid=await createPatient(patientData(o));toast('انضاف الزبون');S.pid=pid;S.view='clients';history.replaceState(null,'','#clients')}})},
-  async 'edit-patient'(){const p=await getDoc('patients/'+S.pid);if(!p)return;const pid=S.pid;openModal({title:'تعديل بيانات الزبون',body:patientForm(p),onSubmit:async o=>{await writePatient(pid,patientData(o));toast('انحفظت التعديلات')}})},
-  async 'del-patient'(){const pid=S.pid;const p=await getDoc('patients/'+pid);if(!p)return;confirmBox('حذف الزبون',`راح ينحذف ملف <b>${esc(p.name)}</b> ومواعيده الجاية. المبالغ اللي دفعها والجلسات تبقى مسجلة بحسابات الأقسام لأنها صارت فعلاً. ما تكدر ترجع الملف.`,async()=>{
-    for(const a of live(p.appts))if(a.date>=today())await upsert('days/'+a.date,{appts:{[a.id]:{del:true}}}).catch(()=>{});
-    await upsert('index/'+p.chunk,{items:{[pid]:{del:true}}});await S.db.doc('patients/'+pid).delete();S.pid=null;toast('انحذف الزبون')})},
+  'new-patient'(){openModal({title:'زبون جديد',body:patientForm(),onSubmit:async o=>{const pd=patientData(o);const pid=await createPatient(pd);await logAct('add','patient',pd.name+(pd.phone?' · '+pd.phone:''),{pid});toast('انضاف الزبون');S.pid=pid;S.view='clients';history.replaceState(null,'','#clients')}})},
+  async 'edit-patient'(){const p=await getDoc('patients/'+S.pid);if(!p)return;const pid=S.pid;openModal({title:'تعديل بيانات الزبون',body:patientForm(p),onSubmit:async o=>{await writePatient(pid,patientData(o));await logAct('edit','patient',p.name,{pid},{name:p.name,phone:p.phone,birthYear:p.birthYear,gender:p.gender,allergies:p.allergies,conditions:p.conditions,notes:p.notes});toast('انحفظت التعديلات')}})},
+  async 'del-patient'(){const pid=S.pid;const p=await getDoc('patients/'+pid);if(!p)return;confirmBox('حذف الزبون',`راح ينتقل ملف <b>${esc(p.name)}</b> لسلة المحذوفات وتنلغي مواعيده الجاية. المبالغ والجلسات تبقى بحسابات الأقسام. تكدر ترجّعه من صفحة السجل.`,async()=>{
+    const ap=live(p.appts).filter(a=>a.date>=today());for(const a of ap)await upsert('days/'+a.date,{appts:{[a.id]:{del:true}}}).catch(()=>{});
+    await writePatient(pid,{del:true,delAt:Date.now(),delBy:byMe()});
+    await logAct('delete','patient',p.name+(p.phone?' · '+p.phone:''),{pid,appts:ap.map(a=>({id:a.id,date:a.date}))},{name:p.name,phone:p.phone,visits:live(p.visits).length,payments:live(p.payments).length});
+    S.pid=null;toast('انتقل الملف لسلة المحذوفات')})},
   'new-appt'(el){const al=DK.filter(k=>perm().depts.includes(k));let sv=el.dataset.dept||(DEPTS[S.view]?S.view:al[0]);if(!al.includes(sv))sv=al[0];const a={pid:el.dataset.pid||S.pid||'',date:el.dataset.date||today(),svc:sv};
-    openModal({title:'موعد جديد',body:apptForm(a),onOpen:wirePicker,onSubmit:async o=>{await saveAppt(o,null);toast('انحجز الموعد')}})},
+    openModal({title:'موعد جديد',body:apptForm(a),onOpen:wirePicker,onSubmit:async o=>{const r=await saveAppt(o,null);await logAct('add','appt',`موعد ${deptName(o.service)} · ${r.n} · ${o.date} ${o.time}`,{date:o.date,id:r.aid,pid:r.pid});toast('انحجز الموعد')}})},
   async 'appt-edit'(el){const a=await findAppt(el.dataset.id,el.dataset.date);if(!a)return;
-    openModal({title:'تعديل الموعد',body:apptForm(a)+`<button type="button" class="btn sm ghost" style="align-self:flex-start;color:var(--bad)" data-act="appt-del" data-id="${a.id}" data-date="${a.date}" data-pid="${esc(a.pid)}">حذف الموعد</button>`,onOpen:wirePicker,onSubmit:async o=>{await saveAppt(o,a);toast('انحفظ الموعد')}})},
-  'appt-del'(el){const {id,date,pid}=el.dataset;confirmBox('حذف الموعد','متأكد تريد تحذف هذا الموعد؟',async()=>{await upsert('days/'+date,{appts:{[id]:{del:true}}});if(pid)await S.db.doc('patients/'+pid).update({appts:{[id]:{del:true}}}).catch(()=>{});toast('انحذف الموعد')})},
+    openModal({title:'تعديل الموعد',body:apptForm(a)+`<button type="button" class="btn sm ghost" style="align-self:flex-start;color:var(--bad)" data-act="appt-del" data-id="${a.id}" data-date="${a.date}" data-pid="${esc(a.pid)}">حذف الموعد</button>`,onOpen:wirePicker,onSubmit:async o=>{const r=await saveAppt(o,a);await logAct('edit','appt',`موعد ${deptName(o.service)} · ${r.n} · ${o.date} ${o.time}`,{date:o.date,id:r.aid,pid:r.pid},a);toast('انحفظ الموعد')}})},
+  async 'appt-del'(el){const {id,date,pid}=el.dataset;const a=await findAppt(id,date);confirmBox('حذف الموعد','متأكد تريد تحذف هذا الموعد؟',async()=>{await upsert('days/'+date,{appts:{[id]:{del:true}}});if(pid)await S.db.doc('patients/'+pid).update({appts:{[id]:{del:true}}}).catch(()=>{});
+    await logAct('delete','appt',`موعد ${deptName(a?.svc)} · ${a?.n||pname(pid)} · ${date} ${a?.time||''}`,{id,date,pid},a);toast('انحذف الموعد')})},
   async 'appt-visit'(el){const a=await findAppt(el.dataset.id,el.dataset.date);if(!a)return;
     openModal({title:'تسجيل '+(DEPTS[a.svc]?.v||'زيارة'),body:visitForm({pid:a.pid,date:a.date,type:DEPTS[a.svc]?a.svc:'dental'}),onOpen:wireVisitForm,onSubmit:o=>saveVisit(o,a)})},
   async 'edit-visit'(el){const vid=el.dataset.id,pid=el.dataset.pid;const p=await getDoc('patients/'+pid);const v=p?.visits?.[vid];if(!v||v.del){toast('ما لكينا الجلسة',true);return}
@@ -865,7 +874,8 @@ const A={
     confirmBox('حذف الجلسة',`راح تنحذف ${DEPTS[v.type]?.v||'الزيارة'} ${esc(p.name)} بتاريخ ${fmtShort(v.date)}${linked.length?' والدفعة المرتبطة بيها ('+money(sumBy(linked,'amount'))+')':''}.`,async()=>{
       const patch={visits:{[vid]:{del:true}}};if(linked.length){patch.payments={};linked.forEach(x=>patch.payments[x.id]={del:true})}
       await writePatient(pid,patch);await upsert(lkey(v.type,v.date),{v:{[vid]:{del:true}}});
-      for(const x of linked)await upsert(lkey(x.dept,x.date),{p:{[x.id]:{del:true}}});toast('انحذفت')})},
+      for(const x of linked)await upsert(lkey(x.dept,x.date),{p:{[x.id]:{del:true}}});
+      await logAct('delete','visit',vLabel(v.type,p.name,v.price,v.date)+(linked.length?' · ويا الدفعة '+money(sumBy(linked,'amount')):''),{pid,id:vid,payIds:linked.map(x=>x.id)},v);toast('انحذفت')})},
   async 'new-pay'(el){const pid=el.dataset.pid||S.pid;const p=await getDoc('patients/'+pid);if(!p){toast('ما لكينا الزبون',true);return}
     const vs=live(p.visits),ps=live(p.payments);const due=k=>sumBy(vs.filter(v=>v.type===k),'price')-sumBy(ps.filter(x=>x.dept===k),'amount');
     const al=DK.filter(k=>perm().depts.includes(k));let dep=el.dataset.dept||al.map(k=>[k,due(k)]).sort((a,b)=>b[1]-a[1])[0][0];if(!al.includes(dep))dep=al[0];
@@ -874,30 +884,30 @@ const A={
       onOpen:form=>{const s=form.querySelector('[name=dept]'),a=form.querySelector('[name=amount]');s.addEventListener('change',()=>{const d=due(s.value);a.value=d>0?d:''})},
       onSubmit:async o=>{const amt=num(o.amount);if(amt<=0)throw userErr('اكتب مبلغ أكبر من صفر.');const id=rid();const note=(o.note||'').trim();
         await writePatient(pid,{payments:{[id]:{dept:o.dept,amount:amt,date:o.date,note,createdAt:Date.now(),by:byMe()}}});
-        await upsert(lkey(o.dept,o.date),{p:{[id]:{pid,n:p.name,amount:amt,date:o.date,note}}});toast('انسجلت الدفعة')}})},
+        await upsert(lkey(o.dept,o.date),{p:{[id]:{pid,n:p.name,amount:amt,date:o.date,note}}});await logAct('add','payment',`دفعة ${deptName(o.dept)} · ${p.name} · ${money(amt)} · ${o.date}`,{pid,id});toast('انسجلت الدفعة')}})},
   async 'del-pay'(el){const id=el.dataset.id,pid=el.dataset.pid;const p=await getDoc('patients/'+pid);const x=p?.payments?.[id];if(!x||x.del)return;
-    confirmBox('حذف الدفعة',`متأكد تريد تحذف دفعة ${money(x.amount)}؟`,async()=>{await writePatient(pid,{payments:{[id]:{del:true}}});await upsert(lkey(x.dept,x.date),{p:{[id]:{del:true}}});toast('انحذفت الدفعة')})},
+    confirmBox('حذف الدفعة',`متأكد تريد تحذف دفعة ${money(x.amount)}؟`,async()=>{await writePatient(pid,{payments:{[id]:{del:true}}});await upsert(lkey(x.dept,x.date),{p:{[id]:{del:true}}});await logAct('delete','payment',`دفعة ${deptName(x.dept)} · ${p.name} · ${money(x.amount)} · ${x.date}`,{pid,id},x);toast('انحذفت الدفعة')})},
   'new-exp'(el){const dep=el.dataset.dept||'general';openModal({title:'مصروف '+(dep==='general'?'عام':'قسم '+deptName(dep)),body:`${dl('dl-exp',D_EXP)}<div class="grid2">${f('القسم',`<select name="dept">${deptOpts(dep,true)}</select>`)}${f('المبلغ (دينار)',`<input name="amount" required inputmode="numeric" dir="ltr">`)}${f('التاريخ',`<input type="date" name="date" required value="${today()}">`)}${f('النوع',`<input name="cat" list="dl-exp" placeholder="مواد">`)}${f('ملاحظة',`<input name="note">`,'full')}</div>`,
-    onSubmit:async o=>{const amt=num(o.amount);if(amt<=0)throw userErr('اكتب مبلغ أكبر من صفر.');await upsert(lkey(o.dept,o.date),{e:{[rid()]:{amount:amt,date:o.date,cat:(o.cat||'').trim()||'أخرى',note:(o.note||'').trim(),createdAt:Date.now()}}});toast('انسجل المصروف')}})},
+    onSubmit:async o=>{const amt=num(o.amount);if(amt<=0)throw userErr('اكتب مبلغ أكبر من صفر.');const xid=rid(),cat=(o.cat||'').trim()||'أخرى';await upsert(lkey(o.dept,o.date),{e:{[xid]:{amount:amt,date:o.date,cat,note:(o.note||'').trim(),createdAt:Date.now(),by:byMe()}}});await logAct('add','expense',`مصروف ${o.dept==='general'?'عام':deptName(o.dept)} · ${cat} · ${money(amt)} · ${o.date}`,{path:lkey(o.dept,o.date),id:xid});toast('انسجل المصروف')}})},
   async 'del-exp'(el){const id=el.dataset.id;let path=el.dataset.path;
     if(!path||path==='undefined'){const m=S.month;for(const k of [...DK,'general']){for(const s of ['a','b','c']){const pth=`ledger/${k}_${m}_${s}`;const d=await getDoc(pth);if(d?.e?.[id]){path=pth;break}}if(path&&path!=='undefined')break}}
     const d=await getDoc(path);const e=d?.e?.[id];if(!e)return;
-    confirmBox('حذف المصروف',`متأكد تريد تحذف مصروف ${money(e.amount)}؟`,async()=>{await upsert(path,{e:{[id]:{del:true}}});if(e.fixedKey)await upsert('fixedpaid/'+e.fixedYear,{items:{[e.fixedKey]:{del:true}}});toast('انحذف المصروف')})},
+    confirmBox('حذف المصروف',`متأكد تريد تحذف مصروف ${money(e.amount)}؟`,async()=>{await upsert(path,{e:{[id]:{del:true}}});if(e.fixedKey)await upsert('fixedpaid/'+e.fixedYear,{items:{[e.fixedKey]:{del:true}}});await logAct('delete','expense',`مصروف ${e.cat||''} · ${money(e.amount)} · ${e.date}`,{path,id},e);toast('انحذف المصروف')})},
   tooth(el){if(!S.canWrite)return;const p=D('patients/'+S.pid);if(!p)return;const pid=S.pid;const n=el.dataset.n;const cur=(p.teeth||{})[n]||{};
     openModal({title:'السن رقم '+n,body:`<div class="seg" role="radiogroup" aria-label="حالة السن">${Object.entries(TOOTH).map(([k,t])=>`<label><input type="radio" name="s" value="${k}" ${k===(cur.s||'healthy')?'checked':''}><span>${t}</span></label>`).join('')}</div>${f('ملاحظة على السن',`<input name="note" value="${esc(cur.note||'')}" placeholder="مثلاً تسوس سطح إطباقي، حساسية برد">`)}`,
-      onSubmit:async o=>{await S.db.doc('patients/'+pid).update({teeth:{[n]:{s:o.s,note:(o.note||'').trim()}}});toast('انحفظ السن '+n)}})},
+      onSubmit:async o=>{await S.db.doc('patients/'+pid).update({teeth:{[n]:{s:o.s,note:(o.note||'').trim()}}});await logAct('edit','teeth',`السن ${n} · ${p.name} · ${TOOTH[o.s]}`,{pid},cur);toast('انحفظ السن '+n)}})},
   'edit-devices'(){const devs=devices();openModal({title:'أجهزة الليزر',body:`<p class="muted small" style="margin:0">غيّر أسماء الأجهزة أو ضيف جهاز. الجلسات المسجلة تبقى مربوطة بجهازها.</p>${devs.map((d,i)=>f('الجهاز '+(i+1),`<input name="dev_${esc(d.id)}" required value="${esc(d.name)}">`)).join('')}${f('إضافة جهاز جديد (اختياري)',`<input name="dev_new" placeholder="اسم الجهاز">`)}`,
-    onSubmit:async o=>{const list=devs.map(d=>({id:d.id,name:(o['dev_'+d.id]||d.name).trim()}));if((o.dev_new||'').trim())list.push({id:'l'+Date.now(),name:o.dev_new.trim()});await saveSettings({laserDevices:list});toast('انحفظت الأجهزة')}})},
+    onSubmit:async o=>{const list=devs.map(d=>({id:d.id,name:(o['dev_'+d.id]||d.name).trim()}));if((o.dev_new||'').trim())list.push({id:'l'+Date.now(),name:o.dev_new.trim()});await saveSettings({laserDevices:list});await logAct('edit','settings','أجهزة الليزر',{},{laserDevices:devs});toast('انحفظت الأجهزة')}})},
   'edit-fixed'(){const fx=fixedList();const row=(id,i={})=>`<div class="grid3" style="align-items:end">${f(id==='new'?'مصروف ثابت جديد':'الاسم',`<input name="fx_name_${esc(id)}" ${id!=='new'?'required':''} value="${esc(i.name||'')}" ${id==='new'?'placeholder="مثلاً اشتراك الإنترنت"':''}>`)}${f('المبلغ (دينار)',`<input name="fx_amt_${esc(id)}" inputmode="numeric" dir="ltr" value="${i.amount||''}">`)}${f('يتكرر',`<select name="fx_freq_${esc(id)}">${opts(Object.entries(FREQ),i.freq||'monthly')}</select>`)}${id!=='new'?`<label class="check full"><input type="checkbox" name="fx_del_${esc(id)}"> احذف هذا المصروف من القائمة</label>`:''}</div>`;
     openModal({title:'المصاريف الثابتة',body:`<p class="muted small" style="margin:0">هذي المصاريف تطلع كل شهر (أو كل سنة) بالحسابات العامة حتى تعرف شنو مدفوع وشنو باقي.</p>${fx.map(i=>row(i.id,i)).join('<hr style="border:0;border-top:1px solid var(--line);margin:0">')}${row('new')}`,
       onSubmit:async o=>{const list=fx.filter(i=>!o['fx_del_'+i.id]).map(i=>({id:i.id,name:(o['fx_name_'+i.id]||i.name).trim(),amount:num(o['fx_amt_'+i.id]),freq:o['fx_freq_'+i.id]||'monthly'}));
         if((o.fx_name_new||'').trim())list.push({id:'f'+Date.now(),name:o.fx_name_new.trim(),amount:num(o.fx_amt_new),freq:o.fx_freq_new||'monthly'});
-        await saveSettings({fixed:list});toast('انحفظت المصاريف الثابتة')}})},
+        await saveSettings({fixed:list});await logAct('edit','settings','المصاريف الثابتة',{},{fixed:fx});toast('انحفظت المصاريف الثابتة')}})},
   'pay-fixed'(el){const i=fixedList().find(x=>x.id===el.dataset.id);if(!i)return;const m=S.month;const td=today();const date=td.startsWith(m)?td:m+'-01';
     openModal({title:'دفع '+esc(i.name),body:`<div class="grid2">${f('المبلغ (دينار)',`<input name="amount" required inputmode="numeric" dir="ltr" value="${i.amount||''}">`)}${f('التاريخ',`<input type="date" name="date" required value="${date}">`)}${f('ملاحظة',`<input name="note" placeholder="${i.freq==='yearly'?'مثلاً إجازة سنة '+m.slice(0,4):'مثلاً إيجار '+monthLabel(m)}">`,'full')}</div>`,
       onSubmit:async o=>{const amt=num(o.amount);if(amt<=0)throw userErr('اكتب مبلغ أكبر من صفر.');const key=fixedKey(i,m),year=m.slice(0,4),eid=rid(),lk=lkey('general',o.date);
         await upsert(lk,{e:{[eid]:{amount:amt,date:o.date,cat:i.name,note:(o.note||'').trim(),fixedId:i.id,fixedKey:key,fixedYear:year,createdAt:Date.now()}}});
-        await upsert('fixedpaid/'+year,{items:{[key]:{fid:i.id,amount:amt,date:o.date,lk,eid}}});toast('انسجل دفع '+i.name)}})},
+        await upsert('fixedpaid/'+year,{items:{[key]:{fid:i.id,amount:amt,date:o.date,lk,eid}}});await logAct('add','expense',`دفع ${i.name} · ${money(amt)} · ${o.date}`,{path:lk,id:eid});toast('انسجل دفع '+i.name)}})},
   async 'link-acc'(el){const id=el.dataset.id;const eid=document.getElementById('lk_'+id)?.value;if(!eid){toast('اختار الموظفة أول',true);return}
     try{await S.db.doc('employees/'+eid).update({uid:id});await S.db.doc('linkreq/'+id).delete();toast('انربط حساب '+(emp(eid)?.name||''))}catch(e){toast('ما انحفظ الربط',true)}},
   async 'rej-acc'(el){try{await S.db.doc('linkreq/'+el.dataset.id).delete();toast('انرفض الطلب')}catch(e){toast('ما انحذف الطلب',true)}},
@@ -908,23 +918,24 @@ const A={
       toast('تغيّرت كلمة السر')}})},
   'new-emp'(){openModal({title:'موظف جديد',body:empForm(),onSubmit:async o=>{const id=S.db.collection('employees').doc().id;const data=empData(o);let acc={};
     if((o.username||'').trim()){if(data.role==='none')throw userErr('اختار صلاحية الدخول قبل ما تسوي اسم مستخدم.');acc=await createAccount(o.username,o.password,data.active?data.role:'none',id)}
-    await saveEmp(id,{...data,...acc,createdAt:Date.now()});toast('انضاف الموظف')}})},
+    await saveEmp(id,{...data,...acc,createdAt:Date.now()});await logAct('add','employee',data.name,{id});toast('انضاف الموظف')}})},
   'open-emp'(el){if(!perm().admin)return;S.eid=el.dataset.id;S.pid=null;if(S.view!=='hr'){S.view='hr';history.replaceState(null,'','#hr')}render();scrollTo(0,0)},
   'edit-emp'(){const e=emp(S.eid);if(!e)return;openModal({title:'تعديل بيانات الموظف',body:empForm(e),onSubmit:async o=>{const data=empData(o);let acc={};
     if(!e.uid&&(o.username||'').trim()){if(data.role==='none')throw userErr('اختار صلاحية الدخول قبل ما تسوي اسم مستخدم.');acc=await createAccount(o.username,o.password,data.active?data.role:'none',e.id)}
     await saveEmp(e.id,{...data,...acc});
     if(e.uid)await S.db.doc('users/'+e.uid).update({role:data.active?data.role:'none'});
+    await logAct('edit','employee',e.name,{id:e.id},{name:e.name,job:e.job,dept:e.dept,role:e.role,active:e.active,salary:e.salary,phone:e.phone});
     toast('انحفظت التعديلات')}})},
   'del-emp'(){const e=emp(S.eid);if(!e)return;
-    confirmBox('حذف الموظف',`راح ينحذف <b>${esc(e.name)}</b> من القائمة. المبالغ اللي انصرفتله تبقى بالحسابات. إذا ترك الشغل بس، الأفضل تغيّر حالته لـ"منتهي" من التعديل.`,async()=>{if(e.uid)await S.db.doc('users/'+e.uid).update({role:'none'}).catch(()=>{});await S.db.doc('employees/'+e.id).delete();await S.db.doc('empPrivate/'+e.id).delete().catch(()=>{});S.eid=null;toast('انحذف الموظف')})},
+    confirmBox('حذف الموظف',`راح ينتقل <b>${esc(e.name)}</b> لسلة المحذوفات ويتوقف دخوله للبرنامج. المبالغ اللي انصرفتله تبقى بالحسابات.`,async()=>{if(e.uid)await S.db.doc('users/'+e.uid).update({role:'none'}).catch(()=>{});await saveEmp(e.id,{deleted:true,active:false});await logAct('delete','employee',e.name,{id:e.id,uid:e.uid||'',role:e.role||'none'},{name:e.name,job:e.job,role:e.role,salary:e.salary});S.eid=null;toast('انتقل الموظف لسلة المحذوفات')})},
   'new-spay'(el){const eid=el.dataset.eid||S.eid||'';const list=S.employees.filter(e=>e.active!==false||e.id===eid);
     if(!list.length){toast('ضيف موظف أول',true);return}
     openModal({title:'صرف مبلغ لموظف',body:`<div class="grid2">${f('الموظف',`<select name="eid" required>${!eid?'<option value="">اختار…</option>':''}${opts(list.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ar')).map(e=>[e.id,e.name]),eid)}</select>`,'full')}
       ${f('النوع',`<select name="kind">${opts(Object.entries(PAYK),'salary')}</select>`)}${f('المبلغ (دينار)',`<input name="amount" required inputmode="numeric" dir="ltr" value="${emp(eid)?.salary||''}">`)}
       ${f('التاريخ',`<input type="date" name="date" required value="${today()}">`)}${f('ملاحظة',`<input name="note" placeholder="مثلاً راتب شهر 11">`)}</div>`,
       onOpen:form=>{const s=form.querySelector('[name=eid]'),k=form.querySelector('[name=kind]'),a=form.querySelector('[name=amount]');const fill=()=>{if(k.value==='salary')a.value=emp(s.value)?.salary||'';else if(+a.value===+(emp(s.value)?.salary))a.value=''};s.addEventListener('change',fill);k.addEventListener('change',fill)},
-      onSubmit:async o=>{const amt=num(o.amount);if(amt<=0)throw userErr('اكتب مبلغ أكبر من صفر.');await upsert(lkey('hr',o.date).replace(/_[bc]$/,'_a'),{s:{[rid()]:{eid:o.eid,kind:o.kind,amount:amt,date:o.date,note:(o.note||'').trim(),createdAt:Date.now()}}});toast('انسجل الصرف')}})},
-  'del-spay'(el){const id=el.dataset.id,path=el.dataset.path.replace(/_[bc]$/,'_a');confirmBox('حذف العملية','متأكد تريد تحذف هذا المبلغ المصروف؟',async()=>{await upsert(path,{s:{[id]:{del:true}}});toast('انحذفت')})},
+      onSubmit:async o=>{const amt=num(o.amount);if(amt<=0)throw userErr('اكتب مبلغ أكبر من صفر.');const sid=rid(),path=lkey('hr',o.date).replace(/_[bc]$/,'_a');await upsert(path,{s:{[sid]:{eid:o.eid,kind:o.kind,amount:amt,date:o.date,note:(o.note||'').trim(),createdAt:Date.now(),by:byMe()}}});await logAct('add','staffpay',`${PAYK[o.kind]} · ${emp(o.eid)?.name||''} · ${money(amt)} · ${o.date}`,{path,id:sid});toast('انسجل الصرف')}})},
+  async 'del-spay'(el){const id=el.dataset.id,path=el.dataset.path.replace(/_[bc]$/,'_a');const x=(await getDoc(path))?.s?.[id];confirmBox('حذف العملية','متأكد تريد تحذف هذا المبلغ المصروف؟',async()=>{await upsert(path,{s:{[id]:{del:true}}});await logAct('delete','staffpay',`${PAYK[x?.kind]||'صرف'} · ${emp(x?.eid)?.name||''} · ${money(x?.amount)} · ${x?.date||''}`,{path,id},x||null);toast('انحذفت')})},
 };
 document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');if(!el||el.tagName==='SELECT')return;const fn=A[el.dataset.act];if(!fn)return;
   if(!S.db&&!['close','back','go','open-patient','open-emp','dev','period'].includes(el.dataset.act)){toast('البيانات بعدها ما تحملت',true);return}
@@ -972,7 +983,7 @@ const DBA={doc:p=>docRef(fdb.doc(p)),collection:p=>colRef(fdb.collection(p))};
 
 /* ---- employees are split: public part (employees) + admin-only part (empPrivate) ---- */
 const RAW={employees:[],empPrivate:[]};
-function mergeEmps(){const pm={};RAW.empPrivate.forEach(x=>pm[x.id]=x);S.employees=RAW.employees.map(e=>({...e,...(pm[e.id]||{}),id:e.id}))}
+function mergeEmps(){const pm={};RAW.empPrivate.forEach(x=>pm[x.id]=x);S.empAll=RAW.employees.map(e=>({...e,...(pm[e.id]||{}),id:e.id}));S.employees=S.empAll.filter(e=>!e.deleted)}
 const PRIV=['salary','phone','start','notes'];
 async function saveEmp(id,data){const pub={},priv={};Object.entries(data).forEach(([k,v])=>(PRIV.includes(k)?priv:pub)[k]=v);
   try{await fdb.doc('employees/'+id).set(pub,{merge:true});if(Object.keys(priv).length)await fdb.doc('empPrivate/'+id).set(priv,{merge:true})}catch(e){throw mapErr(e)}}
@@ -1059,6 +1070,102 @@ document.addEventListener('change',async e=>{
   }catch(x){console.error(x);IMPF.err='توقف النقل: '+(x.code==='permission-denied'?'ما عندك صلاحية.':(x.message||'خلل غير معروف'))+'. اختار الملف مرة ثانية حتى يكمّل.'}
   IMPF.running=false;removeEventListener('beforeunload',warn);render();
 });
+
+
+/* ---- activity log: log/{YYYY-MM-DD}/by/{uid}  e{id:{at,who,act,kind,label,ref,before?}}
+   Append-only by rule: nobody can change or remove an entry from the app. ---- */
+async function logAct(act,kind,label,ref={},before=null){
+  try{const now=new Date();const day=ymd(now);const who=S.myEmp?.name||(S.userDoc?.role==='owner'?'المدير':S.userDoc?.username)||'';
+    let b=null;if(before){const s=JSON.stringify(before);b=s.length>8000?{_json:s.slice(0,8000)}:JSON.parse(s)}
+    const entry={at:now.getTime(),who,act,kind,label:String(label||'').slice(0,300),ref:JSON.parse(JSON.stringify(ref||{}))};if(b)entry.before=b;
+    await fdb.doc(`log/${day}/by/${S.uid}`).set({e:{[rid()]:entry}},{merge:true});LOG.stale=true}
+  catch(e){console.warn('log failed',e)}
+}
+const LOG={key:'',loading:false,entries:[],err:'',stale:false,rows:[]};
+const LOG_ACT={add:['إضافة','good'],edit:['تعديل','warn'],delete:['حذف','bad'],restore:['استرجاع','acc'],purge:['حذف نهائي','bad']};
+const LOG_KIND={visit:'جلسة / زيارة',payment:'دفعة',expense:'مصروف',staffpay:'صرف لموظف',appt:'موعد',patient:'ملف زبون',employee:'موظف',settings:'إعدادات',teeth:'مخطط الأسنان'};
+const RESTORABLE=new Set(['visit','payment','expense','staffpay','appt','patient','employee']);
+function logDays(){let a=S.logFrom||addDays(today(),-6),b=S.logTo||today();if(a>b)[a,b]=[b,a];const out=[];let d=b;while(d>=a&&out.length<31){out.push(d);d=addDays(d,-1)}return out}
+async function loadLog(force){
+  const days=logDays();const key=days.join(',');if(!force&&LOG.key===key&&!LOG.stale)return;if(LOG.loading)return;
+  LOG.key=key;LOG.loading=true;LOG.stale=false;scheduleRender();const out=[];
+  try{await Promise.all(days.map(async d=>{const qs=await fdb.collection(`log/${d}/by`).get();qs.forEach(doc=>Object.entries(doc.data().e||{}).forEach(([id,x])=>out.push({id,uid:doc.id,day:d,...x})))}));
+    LOG.entries=out.sort((a,b)=>b.at-a.at);LOG.err=''}
+  catch(e){LOG.err=e.code==='permission-denied'?'ما عندك صلاحية تشوف السجل.':'ما كدرنا نحمّل السجل. تأكد من الإنترنت.'}
+  LOG.loading=false;scheduleRender();
+}
+const fmtTime=t=>new Date(t).toLocaleString('ar-IQ-u-nu-latn',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+function vLog(){
+  if(!perm().admin)return noAccess();
+  loadLog();
+  const q=(S.logQ||'').trim().toLowerCase();const fa=S.logAct||'all',fw=S.logWho||'all',fk=S.logKind||'all';
+  const whos=[...new Set(LOG.entries.map(e=>e.who).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ar'));
+  const rows=LOG.entries.filter(e=>(fa==='all'||e.act===fa)&&(fw==='all'||e.who===fw)&&(fk==='all'||e.kind===fk)&&(!q||(e.label||'').toLowerCase().includes(q)||(e.who||'').toLowerCase().includes(q)));
+  LOG.rows=rows;
+  const rk=e=>e.kind+':'+(e.ref?.id||e.ref?.pid||'');const restored=new Map();LOG.entries.forEach(e=>{if(e.act==='restore'){const k=rk(e);if(!restored.has(k)||restored.get(k)<e.at)restored.set(k,e.at)}});
+  const isRestored=e=>(restored.get(rk(e))||0)>e.at;
+  const dels=LOG.entries.filter(e=>e.act==='delete');
+  const sel=(id,cur,list)=>`<select id="${id}" class="btn sm">${list.map(([v,t])=>`<option value="${esc(v)}" ${v===cur?'selected':''}>${esc(t)}</option>`).join('')}</select>`;
+  return `<section class="hello"><div><h1>السجل</h1><p class="muted" style="margin:2px 0 0">كل إضافة وتعديل وحذف، منو سواه ومتى. محد يكدر يمسح من السجل.</p></div>
+   <div class="actions"><button class="btn ${fa==='delete'?'primary':''}" data-act="log-trash">سلة المحذوفات (${dels.length})</button><button class="btn ghost" data-act="log-refresh">تحديث</button></div></section>
+  <div class="period"><label>من <input type="date" id="logFrom" value="${S.logFrom||addDays(today(),-6)}"></label><label>إلى <input type="date" id="logTo" value="${S.logTo||today()}"></label>
+   ${sel('logAct',fa,[['all','كل العمليات'],['delete','الحذف'],['edit','التعديل'],['add','الإضافة'],['restore','الاسترجاع']])}
+   ${sel('logWho',fw,[['all','كل الموظفين'],...whos.map(w=>[w,w])])}
+   ${sel('logKind',fk,[['all','كل الأنواع'],...Object.entries(LOG_KIND)])}
+   <input id="logQ" type="search" class="btn sm" placeholder="ابحث باسم زبون أو مبلغ" value="${esc(S.logQ||'')}" style="min-width:180px"></div>
+  <p class="muted small" style="margin:0">أقصى فترة 31 يوم. السجل يبدي من يوم تشغيل هذي الخاصية.</p>
+  ${LOG.err?`<div class="banner bad">${esc(LOG.err)}</div>`:''}
+  <section class="panel">${LOG.loading&&!LOG.entries.length?loadingBox():rows.length?`<div class="tscroll"><table class="tbl"><thead><tr><th>الوقت</th><th>منو</th><th>العملية</th><th>النوع</th><th>التفاصيل</th><th></th></tr></thead><tbody>
+   ${rows.slice(0,500).map((e,i)=>{const a=LOG_ACT[e.act]||[e.act,''];return `<tr data-act="log-detail" data-i="${i}"><td class="num" style="white-space:nowrap">${fmtTime(e.at)}</td><td><b>${esc(e.who||'—')}</b></td><td>${chip(a[0],a[1])}</td><td>${esc(LOG_KIND[e.kind]||e.kind)}</td><td class="td-detail">${esc(e.label)}</td>
+     <td>${e.act==='delete'&&RESTORABLE.has(e.kind)?(isRestored(e)?chip('انرجع','acc'):`<button class="btn sm w" data-act="log-restore" data-i="${i}">استرجاع</button>`):''}</td></tr>`}).join('')}
+   </tbody></table></div>${rows.length>500?'<p class="muted small" style="text-align:center">يطلع أول 500. ضيّق الفترة أو استخدم الفلاتر.</p>':''}`:empty(fa==='delete'?'ماكو شي محذوف بهذي الفترة':'ماكو عمليات بهذي الفترة','جرّب فترة أطول أو غيّر الفلاتر.')}</section>`;
+}
+async function restoreEntry(en){const r=en.ref||{};
+  switch(en.kind){
+    case 'visit':{const p=await getDoc('patients/'+r.pid);const v=p?.visits?.[r.id];if(!v)throw userErr('ما لكينا الجلسة.');if(!v.del)throw userErr('هذي الجلسة مو محذوفة.');
+      const patch={visits:{[r.id]:{del:false}}};(r.payIds||[]).forEach(id=>{(patch.payments=patch.payments||{})[id]={del:false}});
+      await writePatient(r.pid,patch);await upsert(lkey(v.type,v.date),{v:{[r.id]:{del:false}}});
+      for(const id of r.payIds||[]){const x=p.payments?.[id];if(x)await upsert(lkey(x.dept,x.date),{p:{[id]:{del:false}}})}break}
+    case 'payment':{const p=await getDoc('patients/'+r.pid);const x=p?.payments?.[r.id];if(!x)throw userErr('ما لكينا الدفعة.');if(!x.del)throw userErr('هذي الدفعة مو محذوفة.');
+      await writePatient(r.pid,{payments:{[r.id]:{del:false}}});await upsert(lkey(x.dept,x.date),{p:{[r.id]:{del:false}}});break}
+    case 'expense':{const d=await getDoc(r.path);const e=d?.e?.[r.id];if(!e)throw userErr('ما لكينا المصروف.');if(!e.del)throw userErr('هذا المصروف مو محذوف.');
+      await upsert(r.path,{e:{[r.id]:{del:false}}});if(e.fixedKey)await upsert('fixedpaid/'+e.fixedYear,{items:{[e.fixedKey]:{del:false}}});break}
+    case 'staffpay':{const d=await getDoc(r.path);const x=d?.s?.[r.id];if(!x)throw userErr('ما لكينا العملية.');if(!x.del)throw userErr('هذي العملية مو محذوفة.');await upsert(r.path,{s:{[r.id]:{del:false}}});break}
+    case 'appt':{await upsert('days/'+r.date,{appts:{[r.id]:{del:false}}});if(r.pid)await S.db.doc('patients/'+r.pid).update({appts:{[r.id]:{del:false}}}).catch(()=>{});break}
+    case 'patient':{const p=await getDoc('patients/'+r.pid);if(!p)throw userErr('هذا الملف انحذف نهائياً وما يرجع.');if(!p.del)throw userErr('هذا الملف مو محذوف.');
+      await writePatient(r.pid,{del:false});for(const a of r.appts||[])await upsert('days/'+a.date,{appts:{[a.id]:{del:false}}}).catch(()=>{});
+      for(const a of r.appts||[])await S.db.doc('patients/'+r.pid).update({appts:{[a.id]:{del:false}}}).catch(()=>{});break}
+    case 'employee':{const e=emp(r.id);if(!e)throw userErr('ما لكينا الموظف.');if(!e.deleted)throw userErr('هذا الموظف مو محذوف.');
+      await saveEmp(r.id,{deleted:false,active:true});if(r.uid)await S.db.doc('users/'+r.uid).update({role:r.role||'none'}).catch(()=>{});break}
+    default:throw userErr('هذا النوع ما يرجع تلقائياً.');
+  }
+  await logAct('restore',en.kind,en.label,r);LOG.stale=true;
+}
+function deletedPatientView(p,backTxt){
+  const owner=S.userDoc?.role==='owner';const by=p.delBy?(emp(p.delBy)?.name||(p.delBy==='owner'?'المدير':'')):'';
+  return `<button class="back" data-act="back">${backTxt}</button>
+  <section class="panel" style="border-color:var(--bad)"><div class="ph"><h2>${esc(p.name)}</h2>${chip('محذوف','bad')}</div>
+   <p class="muted" style="margin:0 0 12px">هذا الملف بسلة المحذوفات${p.delAt?' من '+fmtTime(p.delAt):''}${by?'، حذفته '+esc(by):''}. فيه ${live(p.visits).length} زيارة و${live(p.payments).length} دفعة.</p>
+   ${perm().admin?`<div class="actions"><button class="btn primary" data-act="patient-restore">استرجاع الملف</button>${owner?'<button class="btn danger" data-act="patient-purge">حذف نهائي</button>':''}</div>`:''}</section>`;
+}
+A['log-trash']=()=>{S.logAct=S.logAct==='delete'?'all':'delete';render()};
+A['log-refresh']=()=>{loadLog(true)};
+A['log-detail']=el=>{const e=LOG.rows[+el.dataset.i];if(!e)return;const a=LOG_ACT[e.act]||[e.act];
+  const b=e.before?`<p class="muted small" style="margin:0">الحالة قبل العملية:</p><pre dir="ltr" style="background:var(--surface-2);padding:12px;border-radius:10px;overflow:auto;max-height:320px;font-size:.8rem;white-space:pre-wrap">${esc(JSON.stringify(e.before,null,2))}</pre>`:'';
+  openModal({title:a[0]+' · '+(LOG_KIND[e.kind]||e.kind),body:`<p style="margin:0"><b>${esc(e.who||'—')}</b> · ${fmtTime(e.at)}</p><p style="margin:0">${esc(e.label)}</p>${b}`,submit:'تمام',onSubmit:async()=>{}})};
+A['log-restore']=el=>{const e=LOG.rows[+el.dataset.i];if(!e)return;
+  openModal({title:'استرجاع',body:`<p style="margin:0">راح يرجع: <b>${esc(e.label)}</b></p><p class="muted small" style="margin:0">انحذف بواسطة ${esc(e.who||'—')} · ${fmtTime(e.at)}</p>`,submit:'استرجاع',onSubmit:async()=>{await restoreEntry(e);toast('انرجع');loadLog(true)}})};
+A['patient-restore']=async()=>{const pid=S.pid;const p=await getDoc('patients/'+pid);if(!p)return;
+  await restoreEntry({kind:'patient',label:p.name+(p.phone?' · '+p.phone:''),ref:{pid,appts:[]}});toast('انرجع الملف');render()};
+A['patient-purge']=async()=>{if(S.userDoc?.role!=='owner')return;const pid=S.pid;const p=await getDoc('patients/'+pid);if(!p)return;
+  confirmBox('حذف نهائي',`راح ينمسح ملف <b>${esc(p.name)}</b> نهائياً وما يرجع أبد. الجلسات والمبالغ تبقى بحسابات الأقسام.`,async()=>{
+    await logAct('purge','patient',p.name+(p.phone?' · '+p.phone:''),{pid},{name:p.name,phone:p.phone,visits:live(p.visits).length});
+    try{await fdb.doc('index/'+p.chunk).update(new firebase.firestore.FieldPath('items',pid),firebase.firestore.FieldValue.delete());await fdb.doc('patients/'+pid).delete()}catch(e){throw mapErr(e)}
+    S.pid=null;toast('انحذف نهائياً')})};
+document.addEventListener('change',e=>{const id=e.target.id;
+  if(id==='logFrom'||id==='logTo'){S[id]=e.target.value;render()}
+  else if(id==='logAct'||id==='logWho'||id==='logKind'){S[id]=e.target.value;render()}});
+let logQT;document.addEventListener('input',e=>{if(e.target.id==='logQ'){S.logQ=e.target.value;clearTimeout(logQT);logQT=setTimeout(()=>{render();const q=document.getElementById('logQ');if(q){q.focus();q.setSelectionRange(q.value.length,q.value.length)}},250)}});
 
 /* ---- session lifecycle ---- */
 let PIN=[],pinnedOn=new Set(),userUnsub=null,pinRetry={};

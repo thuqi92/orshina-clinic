@@ -47,9 +47,23 @@ service cloud.firestore {
     match /settings/{id}   { allow read: if isStaff(); allow write: if isAdmin(); }
     match /fixedpaid/{id}  { allow read, write: if isAdmin(); }
 
-    match /patients/{id} { allow read, create, update: if isStaff(); allow delete: if isAdmin(); }
+    match /patients/{id} { allow read, create, update: if isStaff(); allow delete: if isOwner(); }
     match /index/{id}    { allow read, create, update: if isStaff(); allow delete: if isAdmin(); }
     match /days/{id}     { allow read, create, update: if isStaff(); allow delete: if isAdmin(); }
+
+    // Activity log: log/{day}/by/{uid}. Each person appends to their own doc;
+    // existing entries can never be changed or removed (not even by admins).
+    match /log/{day}/by/{uid} {
+      allow read: if isAdmin();
+      allow create: if isStaff() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['e']) && request.resource.data.e.size() == 1;
+      allow update: if isStaff() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['e'])
+        && request.resource.data.e.diff(resource.data.e).removedKeys().size() == 0
+        && request.resource.data.e.diff(resource.data.e).changedKeys().size() == 0
+        && request.resource.data.e.diff(resource.data.e).addedKeys().size() == 1;
+      allow delete: if false;
+    }
 
     // Department books: ledger/{dept}_{YYYY-MM}_{a|b|c}, staff pay: ledger/hr_...
     match /ledger/{id} {

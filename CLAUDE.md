@@ -36,6 +36,13 @@ Reads are kept low: the app never loads whole collections except the small pinne
 - `employees/{id}`: the public part `{name, job, dept, role, active, uid, username}`. `empPrivate/{id}` (admin only) holds `{salary, phone, start, notes}`.
 - `settings/main`: `{laserDevices[], fixed[]}`.
 - Deleting an entry inside a map is soft: the entry is set to `{del:true}`. Never delete patient financial history silently.
+- Deleting a patient is soft too: `patients/{pid}.del=true` (plus `delAt`, `delBy`), and the index entry gets `del:true`.
+  Only the owner can purge a file for good (rules: patients delete = owner). Deleted employees get `deleted:true` and stay in `S.empAll`, so their names still resolve.
+- `log/{YYYY-MM-DD}/by/{uid}` is the activity log: `e{id:{at,who,act,kind,label,ref,before?}}`.
+  - `act` is add | edit | delete | restore | purge.
+  - Every data-changing action calls `logAct(...)`.
+  - The rules make it append-only: each person writes only to their own doc and can add exactly one new entry per write. No one can change or delete entries from the app. Only admins can read it.
+  - The السجل page reads 1–31 days and restores deleted items from the `ref` stored in each delete entry (`restoreEntry`).
 
 The page talks to Firestore through a tiny adapter (`DBA`). Its `update()` deep-merges nested maps using field paths, so concurrent adds of different visits don't clobber each other.
 
