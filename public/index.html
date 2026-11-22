@@ -566,7 +566,7 @@ function vPatient(){
      :empty('ما اكو زيارات بعد','سجّل أول وحدة من زر "+ جلسة / زيارة".')}</section>
    <div class="stack">
     <section class="panel"><div class="ph"><h2>المواعيد الجاية</h2></div>${ap.length?`<ul class="appts">${ap.map(x=>apptRow(x,{showDate:true})).join('')}</ul>`:empty('ما عنده موعد محجوز')}</section>
-    <section class="panel"><div class="ph"><h2>الدفعات</h2></div>${pays.length?`<ul class="rows">${pays.map(x=>`<li><div><b class="num">${money(x.amount)}</b><div class="meta">${deptChip(x.dept)}<span>${fmtDate(x.date)}</span>${x.note?`<span>${esc(x.note)}</span>`:''}</div></div><button class="btn sm ghost w" data-act="del-pay" data-id="${x.id}" data-pid="${esc(S.pid)}">حذف</button></li>`).join('')}</ul>`:empty('ما دافع شي بعد')}</section>
+    <section class="panel"><div class="ph"><h2>الدفعات</h2></div>${pays.length?`<ul class="rows">${pays.map(x=>`<li><div><b class="num">${money(x.amount)}</b><div class="meta">${deptChip(x.dept)}${x.adj?chip('تسوية','warn'):''}<span>${fmtDate(x.date)}</span>${x.note?`<span>${esc(x.note)}</span>`:''}</div></div><button class="btn sm ghost w" data-act="del-pay" data-id="${x.id}" data-pid="${esc(S.pid)}">حذف</button></li>`).join('')}</ul>`:empty('ما دافع شي بعد')}</section>
     ${p.notes?`<section class="panel"><div class="ph"><h2>ملاحظات</h2></div><p style="margin:0;white-space:pre-wrap">${esc(p.notes)}</p></section>`:''}
    </div>
   </div>`;
@@ -645,7 +645,7 @@ function vFinance(){
     <section class="panel"><div class="ph"><h2>الإيرادات حسب القسم</h2></div><div class="bars">${rows.filter(r=>r.k!=='general').map(r=>`<div class="bar"><span>${deptName(r.k)}</span><div class="track"><div class="fill c-${DEPTS[r.k].c}" style="width:${r.inc/max*100}%"></div></div><b class="num">${money(r.inc)}</b></div>`).join('')}</div></section>
     <section class="panel"><div class="ph"><h2>المصاريف العامة</h2><span class="muted small">مو تابعة لقسم معين</span></div>${expList(gexp,'ما مسجل مصاريف عامة بهذا الشهر')}</section>
    </div>
-   <section class="panel"><div class="ph"><h2>كل الديون</h2></div>${dbt.length?`<ul class="rows">${dbt.slice(0,150).map(x=>`<li><div><button class="name" data-act="open-patient" data-id="${esc(x.e.id)}">${esc(x.e.n)}</button><div class="meta">${DK.filter(k=>(x.e.dp?.[k]||0)>0).map(deptChip).join('')}</div></div>${chip(money(x.due),'bad')}</li>`).join('')}</ul>`:empty('ماكو ديون','كل الزبائن مسددين.')}</section>
+   <section class="panel"><div class="ph"><h2>كل الديون</h2>${dbt.length&&S.userDoc?.role==='owner'?'<button class="btn sm danger w" data-act="clear-debts">تصفير كل الديون</button>':''}</div>${dbt.length?`<ul class="rows">${dbt.slice(0,150).map(x=>`<li><div><button class="name" data-act="open-patient" data-id="${esc(x.e.id)}">${esc(x.e.n)}</button><div class="meta">${DK.filter(k=>(x.e.dp?.[k]||0)>0).map(deptChip).join('')}</div></div>${chip(money(x.due),'bad')}</li>`).join('')}</ul>`:empty('ماكو ديون','كل الزبائن مسددين.')}</section>
   </div>`;
 }
 
@@ -898,6 +898,15 @@ async function findAppt(aid,date){const d=await getDoc('days/'+date);const a=d?.
 /* ---------- actions ---------- */
 const A={
   close:closeModal,
+  'clear-debts'(){if(S.userDoc?.role!=='owner')return;const list=debtors();const total=sumBy(list,'due');
+    openModal({title:'تصفير كل الديون',body:`<p style="margin:0">راح ينسجل <b>تسوية دين</b> لـ <b class="num">${list.length}</b> زبون، المجموع <b class="num">${money(total)}</b>، حتى يصير الباقي على الكل صفر.</p>
+      <p class="muted small" style="margin:0">الجلسات وأسعارها ما تتغير، والتسوية ما تنحسب كإيراد. كل تسوية تطلع بملف الزبون وبالسجل، وتكدر تحذفها إذا احتجت.</p>
+      ${f('ملاحظة التسوية',`<input name="note" value="تسوية: بداية جديدة بالبرنامج">`)}<p class="small" id="clrProg" style="margin:0"></p>`,submit:'صفّر الديون',danger:true,
+      onSubmit:async o=>{const note=(o.note||'').trim()||'تسوية ديون';const batch='adj'+Date.now().toString(36);let n=0,sum=0,i=0;const prog=document.getElementById('clrProg');
+        for(const x of list){i++;const pid=x.e.id;const p=await getDoc('patients/'+pid);if(!p||p.del)continue;const vs=live(p.visits),ps=live(p.payments);const patch={payments:{}};let s=0;
+          DK.forEach(k=>{const due=sumBy(vs.filter(v=>v.type===k),'price')-sumBy(ps.filter(y=>y.dept===k),'amount');if(due>0){patch.payments[rid()]={dept:k,amount:due,date:today(),note,adj:true,batch,createdAt:Date.now(),by:byMe()};s+=due}});
+          if(!s)continue;await writePatient(pid,patch);await logAct('add','payment',`تسوية دين · ${p.name} · ${money(s)}`,{pid,batch});n++;sum+=s;if(prog)prog.textContent=`جاري التسوية: ${i} من ${list.length}`}
+        await logAct('edit','settings',`تصفير كل الديون · ${n} زبون · ${money(sum)}`,{batch});toast(`انصفّرت ديون ${n} زبون`)}})},
   'fin-mode'(el){S.finMode=el.dataset.m;if(S.finMode==='day'&&!S.fday)S.fday=today();render()},
   fday(el){S.fday=el.dataset.d;render()},
   back(){S.pid=null;S.eid=null;render();scrollTo(0,0)},
@@ -941,7 +950,7 @@ const A={
         await writePatient(pid,{payments:{[id]:{dept:o.dept,amount:amt,date:o.date,note,createdAt:Date.now(),by:byMe()}}});
         await upsert(lkey(o.dept,o.date),{p:{[id]:{pid,n:p.name,amount:amt,date:o.date,note}}});await logAct('add','payment',`دفعة ${deptName(o.dept)} · ${p.name} · ${money(amt)} · ${o.date}`,{pid,id});toast('انسجلت الدفعة')}})},
   async 'del-pay'(el){const id=el.dataset.id,pid=el.dataset.pid;const p=await getDoc('patients/'+pid);const x=p?.payments?.[id];if(!x||x.del)return;
-    confirmBox('حذف الدفعة',`متأكد تريد تحذف دفعة ${money(x.amount)}؟`,async()=>{await writePatient(pid,{payments:{[id]:{del:true}}});await upsert(lkey(x.dept,x.date),{p:{[id]:{del:true}}});await logAct('delete','payment',`دفعة ${deptName(x.dept)} · ${p.name} · ${money(x.amount)} · ${x.date}`,{pid,id},x);toast('انحذفت الدفعة')})},
+    confirmBox('حذف الدفعة',`متأكد تريد تحذف دفعة ${money(x.amount)}؟`,async()=>{await writePatient(pid,{payments:{[id]:{del:true}}});if(!x.adj)await upsert(lkey(x.dept,x.date),{p:{[id]:{del:true}}});await logAct('delete','payment',`${x.adj?'تسوية دين':'دفعة'} ${deptName(x.dept)} · ${p.name} · ${money(x.amount)} · ${x.date}`,{pid,id},x);toast('انحذفت الدفعة')})},
   'new-exp'(el){const dep=el.dataset.dept||'general';openModal({title:'مصروف '+(dep==='general'?'عام':'قسم '+deptName(dep)),body:`${dl('dl-exp',D_EXP)}<div class="grid2">${f('القسم',`<select name="dept">${deptOpts(dep,true)}</select>`)}${f('المبلغ (دينار)',`<input name="amount" required inputmode="numeric" dir="ltr">`)}${f('التاريخ',`<input type="date" name="date" required value="${today()}">`)}${f('النوع',`<input name="cat" list="dl-exp" placeholder="مواد">`)}${f('ملاحظة',`<input name="note">`,'full')}</div>`,
     onSubmit:async o=>{const amt=num(o.amount);if(amt<=0)throw userErr('اكتب مبلغ أكبر من صفر.');const xid=rid(),cat=(o.cat||'').trim()||'أخرى';await upsert(lkey(o.dept,o.date),{e:{[xid]:{amount:amt,date:o.date,cat,note:(o.note||'').trim(),createdAt:Date.now(),by:byMe()}}});await logAct('add','expense',`مصروف ${o.dept==='general'?'عام':deptName(o.dept)} · ${cat} · ${money(amt)} · ${o.date}`,{path:lkey(o.dept,o.date),id:xid});toast('انسجل المصروف')}})},
   async 'del-exp'(el){const id=el.dataset.id;let path=el.dataset.path;
@@ -1188,7 +1197,7 @@ async function restoreEntry(en){const r=en.ref||{};
       await writePatient(r.pid,patch);await upsert(lkey(v.type,v.date),{v:{[r.id]:{del:false}}});
       for(const id of r.payIds||[]){const x=p.payments?.[id];if(x)await upsert(lkey(x.dept,x.date),{p:{[id]:{del:false}}})}break}
     case 'payment':{const p=await getDoc('patients/'+r.pid);const x=p?.payments?.[r.id];if(!x)throw userErr('ما لكينا الدفعة.');if(!x.del)throw userErr('هذي الدفعة مو محذوفة.');
-      await writePatient(r.pid,{payments:{[r.id]:{del:false}}});await upsert(lkey(x.dept,x.date),{p:{[r.id]:{del:false}}});break}
+      await writePatient(r.pid,{payments:{[r.id]:{del:false}}});if(!x.adj)await upsert(lkey(x.dept,x.date),{p:{[r.id]:{del:false}}});break}
     case 'expense':{const d=await getDoc(r.path);const e=d?.e?.[r.id];if(!e)throw userErr('ما لكينا المصروف.');if(!e.del)throw userErr('هذا المصروف مو محذوف.');
       await upsert(r.path,{e:{[r.id]:{del:false}}});if(e.fixedKey)await upsert('fixedpaid/'+e.fixedYear,{items:{[e.fixedKey]:{del:false}}});break}
     case 'staffpay':{const d=await getDoc(r.path);const x=d?.s?.[r.id];if(!x)throw userErr('ما لكينا العملية.');if(!x.del)throw userErr('هذي العملية مو محذوفة.');await upsert(r.path,{s:{[r.id]:{del:false}}});break}
