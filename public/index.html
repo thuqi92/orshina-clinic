@@ -573,7 +573,43 @@ function vPatient(){
 }
 
 function fixedKey(i,m){return i.id+'_'+(i.freq==='yearly'?m.slice(0,4):m)}
+/* ---------- daily accounts ---------- */
+function finModeSwitch(){const d=S.finMode==='day';return `<div class="devs" role="group" aria-label="نوع الحساب"><button aria-pressed="${!d}" data-act="fin-mode" data-m="month">شهري</button><button aria-pressed="${d}" data-act="fin-mode" data-m="day">يوم معين</button></div>`}
+function vFinanceDay(){
+  const day=S.fday||today();const m=day.slice(0,7),sh=shardOf(day);
+  let ready=true;const R={};
+  [...DK,'general','hr'].forEach(k=>{const d=D(`ledger/${k}_${m}_${k==='hr'?'a':sh}`);if(d===undefined)ready=false;
+    const pick=o=>live(o).filter(x=>x.date===day);R[k]={v:pick(d?.v),p:pick(d?.p),e:pick(d?.e),s:pick(d?.s)}});
+  const inc=DK.reduce((a,k)=>a+sumBy(R[k].p,'amount'),0);
+  const exps=[...DK,'general'].flatMap(k=>R[k].e.map(e=>({...e,k})));const expT=sumBy(exps,'amount');
+  const staff=R.hr.s;const staffT=sumBy(staff,'amount');
+  const vis=DK.flatMap(k=>R[k].v.map(v=>({...v,type:k}))).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+  const pays=DK.flatMap(k=>R[k].p.map(x=>({...x,k}))).sort((a,b)=>cmp(a.n||'',b.n||''));
+  const ops={};vis.forEach(v=>{const o=v.d?.operator;if(!o)return;const x=(ops[o]=ops[o]||{n:0,amt:0,shots:0});x.n++;x.amt+=+v.price||0;x.shots+=num(v.d?.shots)});
+  const td=today();
+  return `<section class="hello"><div><h1>الحسابات العامة</h1><p class="muted" style="margin:2px 0 0">${longDate(day)}</p></div>
+  <div class="actions">${finModeSwitch()}<button class="btn sm" data-act="fday" data-d="${addDays(day,-1)}" aria-label="اليوم السابق">→</button><input type="date" id="fday" value="${day}" class="btn" style="padding:6px 10px" aria-label="اليوم"><button class="btn sm" data-act="fday" data-d="${addDays(day,1)}" aria-label="اليوم الجاي">←</button>${day!==td?`<button class="btn sm ghost" data-act="fday" data-d="${td}">اليوم</button>`:''}</div></section>
+  ${ready?'':'<div class="banner">جاري تحميل حسابات اليوم…</div>'}
+  <section class="stats">${stat('إيرادات اليوم',money(inc),pays.length+' دفعة','good')}${stat('مصاريف اليوم',money(expT+staffT),staffT?'منها رواتب وسلف '+money(staffT):exps.length+' مصروف')}${stat('الصافي',money(inc-expT-staffT),'',inc-expT-staffT<0?'bad':'')}${stat('الجلسات والزيارات',vis.length,'قيمتها '+money(sumBy(vis,'price')))}</section>
+  <section class="panel"><div class="ph"><h2>حسب القسم</h2></div><div class="tscroll"><table class="tbl"><thead><tr><th>القسم</th><th>الجلسات</th><th>قيمة الجلسات</th><th>المستلم</th><th>المصاريف</th></tr></thead><tbody>
+   ${DK.map(k=>`<tr><td>${deptChip(k)}</td><td class="num">${R[k].v.length||'—'}</td><td class="num">${R[k].v.length?money(sumBy(R[k].v,'price')):'—'}</td><td class="num">${R[k].p.length?money(sumBy(R[k].p,'amount')):'—'}</td><td class="num">${R[k].e.length?money(sumBy(R[k].e,'amount')):'—'}</td></tr>`).join('')}
+   <tr><td><b>مصاريف عامة</b></td><td>—</td><td>—</td><td>—</td><td class="num">${R.general.e.length?money(sumBy(R.general.e,'amount')):'—'}</td></tr>
+   <tr><td><b>الرواتب والسلف</b></td><td>—</td><td>—</td><td>—</td><td class="num">${staffT?money(staffT):'—'}</td></tr>
+  </tbody><tfoot><tr><td>المجموع</td><td class="num">${vis.length}</td><td class="num">${money(sumBy(vis,'price'))}</td><td class="num">${money(inc)}</td><td class="num">${money(expT+staffT)}</td></tr></tfoot></table></div></section>
+  <div class="cols">
+   <section class="panel"><div class="ph"><h2>الجلسات والزيارات</h2><span class="muted small">${vis.length}</span></div>
+   ${vis.length?`<div class="tscroll"><table class="tbl"><thead><tr><th>الزبون</th><th>القسم</th><th>التفاصيل</th><th>السعر</th></tr></thead><tbody>${vis.map(v=>`<tr><td><button class="name" data-act="open-patient" data-id="${esc(v.pid)}">${esc(v.n||pent(v.pid)?.n||'زبون')}</button></td><td>${deptChip(v.type)}</td><td class="td-detail">${visitDetail(v)||'—'}</td><td class="num" style="white-space:nowrap">${money(v.price)}</td></tr>`).join('')}</tbody></table></div>`:empty('ما اكو جلسات بهذا اليوم')}</section>
+   <div class="stack">
+    <section class="panel"><div class="ph"><h2>المبالغ المستلمة</h2><span class="muted small">${money(inc)}</span></div>
+    ${pays.length?`<ul class="rows">${pays.map(x=>`<li><div><button class="name" data-act="open-patient" data-id="${esc(x.pid)}">${esc(x.n||'زبون')}</button><div class="meta">${deptChip(x.k)}${x.note?`<span>${esc(x.note)}</span>`:''}</div></div><b class="num">${money(x.amount)}</b></li>`).join('')}</ul>`:empty('ما انستلم شي بهذا اليوم')}</section>
+    <section class="panel"><div class="ph"><h2>المصاريف</h2><span class="muted small">${money(expT+staffT)}</span></div>
+    ${exps.length||staff.length?`<ul class="rows">${exps.map(e=>`<li><div><b>${esc(e.cat||'مصروف')}</b><div class="meta">${e.k==='general'?chip('عام'):deptChip(e.k)}${e.note?`<span>${esc(e.note)}</span>`:''}</div></div><b class="num">${money(e.amount)}</b></li>`).join('')}${staff.map(x=>`<li><div><b>${esc(PAYK[x.kind]||'صرف')} · ${esc(emp(x.eid)?.name||'')}</b>${x.note?`<div class="meta"><span>${esc(x.note)}</span></div>`:''}</div><b class="num">${money(x.amount)}</b></li>`).join('')}</ul>`:empty('ما اكو مصاريف بهذا اليوم')}</section>
+    ${Object.keys(ops).length?`<section class="panel"><div class="ph"><h2>شغل الموظفين بهذا اليوم</h2></div><ul class="rows">${Object.entries(ops).sort((a,b)=>b[1].amt-a[1].amt).map(([o,x])=>`<li><b>${esc(emp(o)?.name||'موظف محذوف')}</b><span class="meta"><span class="num">${x.n} جلسة</span>${x.shots?`·<span class="num">${x.shots.toLocaleString('en-US')} ضربة</span>`:''}·<b class="num">${money(x.amt)}</b></span></li>`).join('')}</ul></section>`:''}
+   </div>
+  </div>`;
+}
 function vFinance(){
+  if(S.finMode==='day')return vFinanceDay();
   const m=S.month;const L={};[...DK,'general'].forEach(k=>L[k]=ledger(k,m));const H=ledger('hr',m);
   const fp=D('fixedpaid/'+m.slice(0,4));const fpi=fp?.items||{};
   const rows=[...DK,'general'].map(k=>({k,inc:sumBy(L[k].p,'amount'),out:sumBy(L[k].e,'amount'),due:k==='general'?0:sumBy(debtors(k),'due')}));
@@ -595,7 +631,7 @@ function vFinance(){
      ${paid?`<span class="meta">${chip('مدفوع '+money(paid.amount),'good')}<span>${fmtShort(paid.date)}</span></span>`:`<span class="actions">${chip(i.freq==='yearly'?'ما مدفوع هذي السنة':'ما مدفوع هذا الشهر','warn')}<button class="btn sm w" data-act="pay-fixed" data-id="${esc(i.id)}">سجّل الدفع</button></span>`}</li>`}).join('')}</ul>`
    :empty('ما مضاف مصاريف ثابتة','ضيف الإيجار والإجازة وأي مصروف يتكرر.')}</section>`;
   return `<section class="hello"><div><h1>الحسابات العامة</h1><p class="muted" style="margin:2px 0 0">${monthLabel(m)} · كل الأقسام</p></div>
-  <div class="actions">${monthInput()}<button class="btn w" data-act="new-exp" data-dept="general">+ مصروف عام</button></div></section>
+  <div class="actions">${finModeSwitch()}${monthInput()}<button class="btn w" data-act="new-exp" data-dept="general">+ مصروف عام</button></div></section>
   ${ready?'':'<div class="banner">جاري تحميل حسابات الشهر…</div>'}
   <section class="stats">${stat('مجموع الإيرادات',money(tInc),'','good')}${stat('مجموع المصاريف',money(tOut),'مع الرواتب والسلف')}${stat('الصافي',money(tInc-tOut),'',tInc-tOut<0?'bad':'')}${stat('الديون بكل الأقسام',money(tDue),dbt.length+' زبون',tDue>0?'bad':'')}${fx.length?stat('مصاريف ثابتة ما مدفوعة',money(sumBy(fxOpen,'amount')),fxOpen.length?fxOpen.map(i=>esc(i.name)).join('، '):'كلها مدفوعة',fxOpen.length?'bad':'good'):''}</section>
   <section class="panel"><div class="ph"><h2>حسب القسم</h2></div><div class="tscroll"><table class="tbl"><thead><tr><th>القسم</th><th>الإيرادات</th><th>المصاريف</th><th>الصافي</th><th>الديون</th></tr></thead><tbody>
@@ -862,6 +898,8 @@ async function findAppt(aid,date){const d=await getDoc('days/'+date);const a=d?.
 /* ---------- actions ---------- */
 const A={
   close:closeModal,
+  'fin-mode'(el){S.finMode=el.dataset.m;if(S.finMode==='day'&&!S.fday)S.fday=today();render()},
+  fday(el){S.fday=el.dataset.d;render()},
   back(){S.pid=null;S.eid=null;render();scrollTo(0,0)},
   go(el){location.hash=el.dataset.to},
   'open-patient'(el){S.pid=el.dataset.id;S.eid=null;if(perm().views.includes('clients')){S.view='clients';if(location.hash!=='#clients')history.replaceState(null,'','#clients')}closeModal();render();scrollTo(0,0)},
@@ -960,6 +998,7 @@ document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');if
 document.addEventListener('change',async e=>{const t=e.target;
   if(t.matches('[data-act=appt-status]')){try{await setApptStatus(t.dataset.id,t.dataset.date,t.dataset.pid,t.value);toast('الحالة: '+AST[t.value])}catch(err){toast('ما انحفظت الحالة',true)}}
   else if(t.id==='month'&&t.value){S.month=t.value;render()}
+  else if(t.id==='fday'&&t.value){S.fday=t.value;render()}
   else if(t.id==='hrFrom'&&t.value){S.hrFrom=t.value;render()}
   else if(t.id==='hrTo'&&t.value){S.hrTo=t.value;render()}
 });
