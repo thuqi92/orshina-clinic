@@ -185,6 +185,10 @@ ul.appts,ul.rows,ul.visits{list-style:none;margin:0;padding:0;display:flex;flex-
 
 .visit{padding:12px 0;border-top:1px solid var(--line);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px}
 .visit:first-child{border-top:0}
+.vyear{font-family:var(--f-head);font-weight:600;font-size:.85rem;color:var(--accent);padding:10px 0 4px;border-top:1px solid var(--line);letter-spacing:.04em}
+.vyear:first-child{border-top:0;padding-top:0}
+.vyear + .visit{border-top:0}
+.vno{display:inline-grid;place-items:center;min-width:26px;height:22px;padding:0 6px;margin-inline-end:8px;border-radius:999px;background:var(--surface-2);color:var(--muted);font-size:.75rem;font-weight:600;vertical-align:1px}
 .visit .vd{font-size:.92rem}
 .visit .vm{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap;align-items:center;color:var(--muted);font-size:.84rem}
 .visit .price{text-align:end;font-variant-numeric:tabular-nums;font-weight:600}
@@ -310,6 +314,7 @@ const LOC='ar-IQ-u-nu-latn';
 const money=n=>Math.round(+n||0).toLocaleString('en-US')+' د.ع';
 const num=v=>{const n=parseFloat(String(v??'').replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[,٬\s]/g,''));return isFinite(n)?n:0};
 const fmtDate=s=>s?new Date(s+'T00:00').toLocaleDateString(LOC,{weekday:'short',day:'numeric',month:'short'}):'';
+const fmtDay=s=>s?new Date(s+'T00:00').toLocaleDateString(LOC,{weekday:'short',day:'numeric',month:'short',year:'numeric'}):'';
 const fmtShort=s=>s?new Date(s+'T00:00').toLocaleDateString(LOC,{day:'numeric',month:'short',year:'numeric'}):'';
 const longDate=s=>new Date(s+'T00:00').toLocaleDateString(LOC,{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 const monthLabel=m=>new Date(m+'-01T00:00').toLocaleDateString(LOC,{month:'long',year:'numeric'});
@@ -564,12 +569,12 @@ function vPatient(){
   ${showTeeth?`<section class="panel"><div class="ph"><h2>مخطط الأسنان</h2><span class="muted small w">دوس على أي سن حتى تغيّر حالته أو تكتب ملاحظة</span></div>${toothChart(p)}</section>`:''}
   <div class="cols">
    <section class="panel"><div class="ph"><h2>الزيارات والجلسات</h2><span class="muted small">${vs.length}</span></div>
-   ${vs.length?`<ul class="visits">${vs.map(v=>`<li class="visit"><div class="vd">${visitDetail(v)||'<span class="muted">بدون تفاصيل</span>'}</div><div class="price">${money(v.price)}</div>
-     <div class="vm">${deptChip(v.type)}<span>${fmtDate(v.date)}</span>${v.d?.next?`<span>الجلسة الجاية: ${fmtDate(v.d.next)}</span>`:''}${v.note?`<span>${esc(v.note)}</span>`:''}<button class="btn sm ghost w" data-act="edit-visit" data-id="${v.id}" data-pid="${esc(S.pid)}">تعديل</button><button class="btn sm ghost w" data-act="del-visit" data-id="${v.id}" data-pid="${esc(S.pid)}">حذف</button></div></li>`).join('')}</ul>`
+   ${vs.length?`<ul class="visits">${vs.map((v,i)=>`${i===0||vs[i-1].date.slice(0,4)!==v.date.slice(0,4)?`<li class="vyear">${v.date.slice(0,4)}</li>`:''}<li class="visit"><div class="vd"><span class="vno num">${vs.length-i}</span>${visitDetail(v)||'<span class="muted">بدون تفاصيل</span>'}</div><div class="price">${money(v.price)}</div>
+     <div class="vm">${deptChip(v.type)}<span>${fmtDay(v.date)}</span>${v.d?.next?`<span>الجلسة الجاية: ${fmtDate(v.d.next)}</span>`:''}${v.note?`<span>${esc(v.note)}</span>`:''}<button class="btn sm ghost w" data-act="edit-visit" data-id="${v.id}" data-pid="${esc(S.pid)}">تعديل</button><button class="btn sm ghost w" data-act="del-visit" data-id="${v.id}" data-pid="${esc(S.pid)}">حذف</button></div></li>`).join('')}</ul>`
      :empty('ما اكو زيارات بعد','سجّل أول وحدة من زر "+ جلسة / زيارة".')}</section>
    <div class="stack">
     <section class="panel"><div class="ph"><h2>المواعيد الجاية</h2></div>${ap.length?`<ul class="appts">${ap.map(x=>apptRow(x,{showDate:true})).join('')}</ul>`:empty('ما عنده موعد محجوز')}</section>
-    <section class="panel"><div class="ph"><h2>الدفعات</h2></div>${pays.length?`<ul class="rows">${pays.map(x=>`<li><div><b class="num">${money(x.amount)}</b><div class="meta">${deptChip(x.dept)}${x.adj?chip('تسوية','warn'):''}<span>${fmtDate(x.date)}</span>${x.note?`<span>${esc(x.note)}</span>`:''}</div></div><button class="btn sm ghost w" data-act="del-pay" data-id="${x.id}" data-pid="${esc(S.pid)}">حذف</button></li>`).join('')}</ul>`:empty('ما دافع شي بعد')}</section>
+    <section class="panel"><div class="ph"><h2>الدفعات</h2></div>${pays.length?`<ul class="rows">${pays.map(x=>`<li><div><b class="num">${money(x.amount)}</b><div class="meta">${deptChip(x.dept)}${x.adj?chip('تسوية','warn'):''}<span>${fmtDay(x.date)}</span>${x.note?`<span>${esc(x.note)}</span>`:''}</div></div><button class="btn sm ghost w" data-act="del-pay" data-id="${x.id}" data-pid="${esc(S.pid)}">حذف</button></li>`).join('')}</ul>`:empty('ما دافع شي بعد')}</section>
     ${p.notes?`<section class="panel"><div class="ph"><h2>ملاحظات</h2></div><p style="margin:0;white-space:pre-wrap">${esc(p.notes)}</p></section>`:''}
    </div>
   </div>`;
