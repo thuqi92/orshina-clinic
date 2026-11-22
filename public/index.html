@@ -960,12 +960,15 @@ const A={
     openModal({title:'تعديل '+(DEPTS[v.type]?.v||'الزيارة'),body:visitForm({...v,pid},true),onOpen:f_=>{f_.dataset.edit='1';wireVisitForm(f_)},onSubmit:o=>saveVisit(o,null,{vid,pid})})},
   'new-visit'(el){const al=DK.filter(k=>perm().depts.includes(k));let t=el.dataset.dept||(DEPTS[S.view]?S.view:al[0]);if(!al.includes(t))t=al[0];openModal({title:'تسجيل '+(DEPTS[t].v),body:visitForm({pid:el.dataset.pid||S.pid||'',type:t}),onOpen:wireVisitForm,onSubmit:o=>saveVisit(o)})},
   async 'del-visit'(el){const vid=el.dataset.id,pid=el.dataset.pid;const p=await getDoc('patients/'+pid);const v=p?.visits?.[vid];if(!v||v.del){toast('ما لكينا الجلسة',true);return}
-    const linked=live(p.payments).filter(x=>x.vid===vid);
-    confirmBox('حذف الجلسة',`راح تنحذف ${DEPTS[v.type]?.v||'الزيارة'} ${esc(p.name)} بتاريخ ${fmtShort(v.date)}${linked.length?' والدفعة المرتبطة بيها ('+money(sumBy(linked,'amount'))+')':''}.`,async()=>{
+    // payments that belong to this session: recorded with it, or a separate payment by the same client, same department, same day
+    const cand=live(p.payments).filter(x=>!x.adj&&(x.vid===vid||(!x.vid&&x.dept===v.type&&x.date===v.date)));
+    const list=cand.length?`<p class="muted small" style="margin:0">الدفعات المرتبطة. المأشرة تنحذف ويا الجلسة حتى ما يبقى مبلغها بالحساب:</p><div class="seg" style="flex-direction:column;align-items:stretch">${cand.map(x=>`<label class="check"><input type="checkbox" name="pd_${x.id}" checked style="position:static;opacity:1;pointer-events:auto;width:18px;height:18px"> <b class="num">${money(x.amount)}</b> <span class="muted small">${x.vid===vid?'انسجلت ويا الجلسة':'دفعة منفصلة بنفس اليوم'}${x.note?' · '+esc(x.note):''}</span></label>`).join('')}</div>`:'';
+    openModal({title:'حذف الجلسة',body:`<p style="margin:0">راح تنحذف ${DEPTS[v.type]?.v||'الزيارة'} <b>${esc(p.name)}</b> بتاريخ ${fmtShort(v.date)} (${money(v.price)}).</p>${list}`,submit:'نعم، احذف',danger:true,onSubmit:async o=>{
+      const linked=cand.filter(x=>o['pd_'+x.id]);
       const patch={visits:{[vid]:{del:true}}};if(linked.length){patch.payments={};linked.forEach(x=>patch.payments[x.id]={del:true})}
       await writePatient(pid,patch);await upsert(lkey(v.type,v.date),{v:{[vid]:{del:true}}});
       for(const x of linked)await upsert(lkey(x.dept,x.date),{p:{[x.id]:{del:true}}});
-      await logAct('delete','visit',vLabel(v.type,p.name,v.price,v.date)+(linked.length?' · ويا الدفعة '+money(sumBy(linked,'amount')):''),{pid,id:vid,payIds:linked.map(x=>x.id)},v);toast('انحذفت')})},
+      await logAct('delete','visit',vLabel(v.type,p.name,v.price,v.date)+(linked.length?' · ويا الدفعة '+money(sumBy(linked,'amount')):''),{pid,id:vid,payIds:linked.map(x=>x.id)},v);toast(linked.length?'انحذفت الجلسة ودفعتها':'انحذفت')}})},
   async 'new-pay'(el){const pid=el.dataset.pid||S.pid;const p=await getDoc('patients/'+pid);if(!p){toast('ما لكينا الزبون',true);return}
     const vs=live(p.visits),ps=live(p.payments);const due=k=>sumBy(vs.filter(v=>v.type===k),'price')-sumBy(ps.filter(x=>x.dept===k),'amount');
     const al=DK.filter(k=>perm().depts.includes(k));let dep=el.dataset.dept||al.map(k=>[k,due(k)]).sort((a,b)=>b[1]-a[1])[0][0];if(!al.includes(dep))dep=al[0];
