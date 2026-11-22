@@ -388,7 +388,7 @@ function entryFor(p){
   const vs=live(p.visits),ps=live(p.payments);const dp={},nx={};
   DK.forEach(k=>{const kv=vs.filter(v=>v.type===k);dp[k]=sumBy(kv,'price')-sumBy(ps.filter(x=>x.dept===k),'amount');
     const last=kv.sort((a,b)=>cmp(b.date,a.date)||(b.createdAt||0)-(a.createdAt||0))[0];nx[k]=last?.d?.next||''});
-  return{del:!!p.del,n:p.name||'',p:p.phone||'',l:vs.reduce((m,v)=>v.date>m?v.date:m,''),dep:DK.filter(k=>vs.some(v=>v.type===k)),al:p.allergies?1:0,dp,nx};
+  return{...(p.src==='eclinic'?{}:{c:p.createdAt||0}),del:!!p.del,n:p.name||'',p:p.phone||'',l:vs.reduce((m,v)=>v.date>m?v.date:m,''),dep:DK.filter(k=>vs.some(v=>v.type===k)),al:p.allergies?1:0,dp,nx};
 }
 function pickChunk(){const counts={};S.index.forEach(c=>counts[c.id]=Object.keys(c.items||{}).length);
   const ok=Object.keys(counts).sort().find(k=>counts[k]<CHUNK_MAX);if(ok)return ok;let i=0;while(counts['c'+pad(i)]!==undefined)i++;return 'c'+pad(i)}
@@ -465,10 +465,13 @@ function vHome(){
 
 function vClients(){
   const q=S.q;const all=[...S.pidx.values()];
-  const list=all.filter(e=>matchEntry(e,q)).sort((a,b)=>(a.n||'').localeCompare(b.n||'','ar'));
+  const added=e=>{if(e.c)return[1,e.c];const id=e.id||'';if(/^o\d+$/.test(id))return[0,+id.slice(1)];const t=parseInt(id.slice(0,8),36);return[1,isFinite(t)?t:0]};
+  const mode=S.csort||'new';
+  const sorter=mode==='name'?(a,b)=>(a.n||'').localeCompare(b.n||'','ar'):mode==='visit'?(a,b)=>cmp(b.l||'',a.l||'')||(a.n||'').localeCompare(b.n||'','ar'):(a,b)=>{const x=added(a),y=added(b);return y[0]-x[0]||y[1]-x[1]};
+  const list=all.filter(e=>matchEntry(e,q)).sort(sorter);
   const shown=list.slice(0,200);
   return `<section class="hello"><div><h1>الزبائن</h1><p class="muted" style="margin:2px 0 0">${all.length.toLocaleString('en-US')} زبون مسجل بكل الأقسام</p></div><div class="actions w"><button class="btn primary" data-act="new-patient">+ زبون جديد</button></div></section>
-  <div class="search"><input id="q" type="search" placeholder="ابحث بالاسم أو رقم التلفون" value="${esc(q)}" autocomplete="off"></div>
+  <div class="search"><input id="q" type="search" placeholder="ابحث بالاسم أو رقم التلفون" value="${esc(q)}" autocomplete="off"><select id="csort" class="btn" aria-label="ترتيب الزبائن">${opts([['new','الأحدث إضافة'],['visit','آخر زيارة'],['name','حسب الاسم']],S.csort||'new')}</select></div>
   <section class="panel">${shown.length?`<div class="tscroll"><table class="tbl"><thead><tr><th>الاسم</th><th>التلفون</th><th>الأقسام</th><th>آخر زيارة</th><th>الباقي عليه</th></tr></thead><tbody>
   ${shown.map(e=>{const due=DK.reduce((a,k)=>a+(e.dp?.[k]||0),0);return `<tr data-act="open-patient" data-id="${esc(e.id)}"><td><b>${esc(e.n)}</b>${e.al?' '+chip('حساسية','bad'):''}</td><td><bdi dir="ltr" class="num">${esc(e.p||'—')}</bdi></td><td><div class="meta">${(e.dep||[]).map(deptChip).join('')||'<span class="muted">—</span>'}</div></td><td>${e.l?fmtShort(e.l):'<span class="muted">—</span>'}</td><td class="num">${due>0?chip(money(due),'bad'):'<span class="muted">—</span>'}</td></tr>`}).join('')}
   </tbody></table></div>${list.length>shown.length?`<p class="muted small" style="margin:12px 0 0;text-align:center">يطلع أول 200 من ${list.length.toLocaleString('en-US')}. اكتب بالبحث حتى تلكى الزبون.</p>`:''}`
@@ -1008,6 +1011,7 @@ document.addEventListener('change',async e=>{const t=e.target;
   if(t.matches('[data-act=appt-status]')){try{await setApptStatus(t.dataset.id,t.dataset.date,t.dataset.pid,t.value);toast('الحالة: '+AST[t.value])}catch(err){toast('ما انحفظت الحالة',true)}}
   else if(t.id==='month'&&t.value){S.month=t.value;render()}
   else if(t.id==='fday'&&t.value){S.fday=t.value;render()}
+  else if(t.id==='csort'){S.csort=t.value;render()}
   else if(t.id==='hrFrom'&&t.value){S.hrFrom=t.value;render()}
   else if(t.id==='hrTo'&&t.value){S.hrTo=t.value;render()}
 });
