@@ -448,6 +448,22 @@ function expList(exps,emptyMsg){return exps.length?`<ul class="rows">${exps.map(
 
 
 /* ---------- views ---------- */
+function todayAccounts(L,td){
+  const ready=DK.every(k=>L[k].ready);
+  const vis=DK.flatMap(k=>L[k].v.filter(v=>v.date===td).map(v=>({...v,type:k}))).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  const pays=DK.flatMap(k=>L[k].p.filter(x=>x.date===td).map(x=>({...x,k})));
+  const inc=sumBy(pays,'amount'),val=sumBy(vis,'price');
+  const hm=t=>t?new Date(t).toLocaleTimeString(LOC,{hour:'2-digit',minute:'2-digit'}):'';
+  const who=v=>{const o=v.d?.operator||v.by;return o&&o!=='owner'?esc(emp(o)?.name||''):''};
+  return `<section class="panel"><div class="ph"><h2>حسابات اليوم</h2><span class="actions"><span class="meta"><span class="num">${vis.length} حالة</span>·<span class="num">قيمتها ${money(val)}</span>·<b class="num" style="color:var(--good)">المستلم ${money(inc)}</b></span><button class="btn sm" data-act="go-day">التفاصيل الكاملة</button></span></div>
+   ${!ready?loadingBox():`<div class="cols">
+    <div style="min-width:0"><h3 style="font-size:.95rem;margin:0 0 8px">الحالات المشتغلة</h3>
+     ${vis.length?`<div class="tscroll"><table class="tbl"><thead><tr><th>الوقت</th><th>الزبون</th><th>القسم</th><th>التفاصيل</th><th>الموظفة</th><th>السعر</th></tr></thead><tbody>${vis.map(v=>`<tr><td class="num" style="white-space:nowrap">${hm(v.createdAt)}</td><td><button class="name" data-act="open-patient" data-id="${esc(v.pid)}">${esc(v.n||pent(v.pid)?.n||'زبون')}</button></td><td>${deptChip(v.type)}</td><td class="td-detail">${visitDetail(v)||'—'}</td><td>${who(v)||'—'}</td><td class="num" style="white-space:nowrap">${money(v.price)}</td></tr>`).join('')}</tbody>
+     <tfoot><tr><td colspan="5">المجموع</td><td class="num" style="white-space:nowrap">${money(val)}</td></tr></tfoot></table></div>`:empty('ما انشتغلت حالات لحد هسه اليوم')}</div>
+    <div style="min-width:0"><h3 style="font-size:.95rem;margin:0 0 8px">الدفعات</h3>
+     ${pays.length?`<ul class="rows">${pays.map(x=>`<li><div><button class="name" data-act="open-patient" data-id="${esc(x.pid)}">${esc(x.n||pent(x.pid)?.n||'زبون')}</button><div class="meta">${deptChip(x.k)}${x.note?`<span>${esc(x.note)}</span>`:''}</div></div><b class="num">${money(x.amount)}</b></li>`).join('')}<li><b>المجموع</b><b class="num" style="color:var(--good)">${money(inc)}</b></li></ul>`:empty('ما انستلمت دفعات لحد هسه اليوم')}</div>
+   </div>`}</section>`;
+}
 function vHome(){
   const td=today();
   const ap=dayAppts(td).sort((a,b)=>cmp(a.time||'',b.time||''));
@@ -460,6 +476,7 @@ function vHome(){
   <section class="stats">${stat('مواعيد اليوم',live_.length,ap.filter(a=>a.st==='arrived'||a.st==='done').length+' حضروا')}${stat('دخل اليوم',money(inc),'كل الأقسام')}${stat('ديون عند الزبائن',money(sumBy(dbt,'due')),dbt.length+' زبون',dbt.length?'bad':'')}${stat('متابعات قريبة',fu.length,'خلال أسبوعين')}</section>
   <section class="dcards">${DK.map(k=>{const income=sumBy(L[k].p,'amount');const cnt=L[k].v.length;const tda=ap.filter(a=>a.svc===k&&a.st!=='cancelled').length;
     return `<a class="dcard" href="#${k}" style="--bar:var(--${DEPTS[k].c})"><b>${DEPTS[k].n}</b><div class="row"><span>مواعيد اليوم</span><span>${tda}</span></div><div class="row"><span>${DEPTS[k].vs} الشهر</span><span>${cnt}</span></div><div class="row"><span>إيراد الشهر</span><span>${money(income)}</span></div></a>`}).join('')}</section>
+  ${todayAccounts(L,td)}
   <div class="cols">
    <section class="panel"><div class="ph"><h2>مواعيد اليوم</h2></div>
    ${ap.length?`<ul class="appts">${ap.map(a=>apptRow(a)).join('')}</ul>`:empty('ما عندك مواعيد اليوم','احجز من زر "+ موعد" فوق.')}</section>
@@ -906,6 +923,7 @@ async function findAppt(aid,date){const d=await getDoc('days/'+date);const a=d?.
 /* ---------- actions ---------- */
 const A={
   close:closeModal,
+  'go-day'(){S.finMode='day';S.fday=today();location.hash='finance'},
   'clear-debts'(){if(S.userDoc?.role!=='owner')return;const list=debtors();const total=sumBy(list,'due');
     openModal({title:'تصفير كل الديون',body:`<p style="margin:0">راح ينسجل <b>تسوية دين</b> لـ <b class="num">${list.length}</b> زبون، المجموع <b class="num">${money(total)}</b>، حتى يصير الباقي على الكل صفر.</p>
       <p class="muted small" style="margin:0">الجلسات وأسعارها ما تتغير، والتسوية ما تنحسب كإيراد. كل تسوية تطلع بملف الزبون وبالسجل، وتكدر تحذفها إذا احتجت.</p>
