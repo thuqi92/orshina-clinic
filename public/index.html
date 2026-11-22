@@ -458,10 +458,10 @@ function todayAccounts(L,td){
   return `<section class="panel"><div class="ph"><h2>حسابات اليوم</h2><span class="actions"><span class="meta"><span class="num">${vis.length} حالة</span>·<span class="num">قيمتها ${money(val)}</span>·<b class="num" style="color:var(--good)">المستلم ${money(inc)}</b></span><button class="btn sm" data-act="go-day">التفاصيل الكاملة</button></span></div>
    ${!ready?loadingBox():`<div class="cols">
     <div style="min-width:0"><h3 style="font-size:.95rem;margin:0 0 8px">الحالات المشتغلة</h3>
-     ${vis.length?`<div class="tscroll"><table class="tbl"><thead><tr><th>الوقت</th><th>الزبون</th><th>القسم</th><th>التفاصيل</th><th>الموظفة</th><th>السعر</th></tr></thead><tbody>${vis.map(v=>`<tr><td class="num" style="white-space:nowrap">${hm(v.createdAt)}</td><td><button class="name" data-act="open-patient" data-id="${esc(v.pid)}">${esc(v.n||pent(v.pid)?.n||'زبون')}</button></td><td>${deptChip(v.type)}</td><td class="td-detail">${visitDetail(v)||'—'}</td><td>${who(v)||'—'}</td><td class="num" style="white-space:nowrap">${money(v.price)}</td></tr>`).join('')}</tbody>
-     <tfoot><tr><td colspan="5">المجموع</td><td class="num" style="white-space:nowrap">${money(val)}</td></tr></tfoot></table></div>`:empty('ما انشتغلت حالات لحد هسه اليوم')}</div>
+     ${vis.length?`<div class="tscroll"><table class="tbl"><thead><tr><th>الوقت</th><th>الزبون</th><th>القسم</th><th>التفاصيل</th><th>الموظفة</th><th>السعر</th><th></th></tr></thead><tbody>${vis.map(v=>`<tr><td class="num" style="white-space:nowrap">${hm(v.createdAt)}</td><td><button class="name" data-act="open-patient" data-id="${esc(v.pid)}">${esc(v.n||pent(v.pid)?.n||'زبون')}</button></td><td>${deptChip(v.type)}</td><td class="td-detail">${visitDetail(v)||'—'}</td><td>${who(v)||'—'}</td><td class="num" style="white-space:nowrap">${money(v.price)}</td><td><button class="btn sm ghost w" data-act="del-visit" data-id="${v.id}" data-pid="${esc(v.pid)}" data-path="${esc(lkey(v.type,v.date))}">حذف</button></td></tr>`).join('')}</tbody>
+     <tfoot><tr><td colspan="5">المجموع</td><td class="num" style="white-space:nowrap">${money(val)}</td><td></td></tr></tfoot></table></div>`:empty('ما انشتغلت حالات لحد هسه اليوم')}</div>
     <div style="min-width:0"><h3 style="font-size:.95rem;margin:0 0 8px">الدفعات</h3>
-     ${pays.length?`<ul class="rows">${pays.map(x=>`<li><div><button class="name" data-act="open-patient" data-id="${esc(x.pid)}">${esc(x.n||pent(x.pid)?.n||'زبون')}</button><div class="meta">${deptChip(x.k)}${x.note?`<span>${esc(x.note)}</span>`:''}</div></div><b class="num">${money(x.amount)}</b></li>`).join('')}<li><b>المجموع</b><b class="num" style="color:var(--good)">${money(inc)}</b></li></ul>`:empty('ما انستلمت دفعات لحد هسه اليوم')}</div>
+     ${pays.length?`<ul class="rows">${pays.map(x=>`<li><div><button class="name" data-act="open-patient" data-id="${esc(x.pid)}">${esc(x.n||pent(x.pid)?.n||'زبون')}</button><div class="meta">${deptChip(x.k)}${x.note?`<span>${esc(x.note)}</span>`:''}</div></div><span class="actions"><b class="num">${money(x.amount)}</b><button class="btn sm ghost w" data-act="del-lpay" data-id="${x.id}" data-pid="${esc(x.pid)}" data-path="${esc(lkey(x.k,x.date))}">حذف</button></span></li>`).join('')}<li><b>المجموع</b><b class="num" style="color:var(--good)">${money(inc)}</b></li></ul>`:empty('ما انستلمت دفعات لحد هسه اليوم')}</div>
    </div>`}</section>`;
 }
 function vHome(){
@@ -623,10 +623,10 @@ function vFinanceDay(){
   </tbody><tfoot><tr><td>المجموع</td><td class="num">${vis.length}</td><td class="num">${money(sumBy(vis,'price'))}</td><td class="num">${money(inc)}</td><td class="num">${money(expT+staffT)}</td></tr></tfoot></table></div></section>
   <div class="cols">
    <section class="panel"><div class="ph"><h2>الجلسات والزيارات</h2><span class="muted small">${vis.length}</span></div>
-   ${vis.length?`<div class="tscroll"><table class="tbl"><thead><tr><th>الزبون</th><th>القسم</th><th>التفاصيل</th><th>السعر</th></tr></thead><tbody>${vis.map(v=>`<tr><td><button class="name" data-act="open-patient" data-id="${esc(v.pid)}">${esc(v.n||pent(v.pid)?.n||'زبون')}</button></td><td>${deptChip(v.type)}</td><td class="td-detail">${visitDetail(v)||'—'}</td><td class="num" style="white-space:nowrap">${money(v.price)}</td></tr>`).join('')}</tbody></table></div>`:empty('ما اكو جلسات بهذا اليوم')}</section>
+   ${vis.length?`<div class="tscroll"><table class="tbl"><thead><tr><th>الزبون</th><th>القسم</th><th>التفاصيل</th><th>السعر</th><th></th></tr></thead><tbody>${vis.map(v=>`<tr><td><button class="name" data-act="open-patient" data-id="${esc(v.pid)}">${esc(v.n||pent(v.pid)?.n||'زبون')}</button></td><td>${deptChip(v.type)}</td><td class="td-detail">${visitDetail(v)||'—'}</td><td class="num" style="white-space:nowrap">${money(v.price)}</td><td><button class="btn sm ghost w" data-act="del-visit" data-id="${v.id}" data-pid="${esc(v.pid)}" data-path="${esc(lkey(v.type,v.date))}">حذف</button></td></tr>`).join('')}</tbody></table></div>`:empty('ما اكو جلسات بهذا اليوم')}</section>
    <div class="stack">
     <section class="panel"><div class="ph"><h2>المبالغ المستلمة</h2><span class="muted small">${money(inc)}</span></div>
-    ${pays.length?`<ul class="rows">${pays.map(x=>`<li><div><button class="name" data-act="open-patient" data-id="${esc(x.pid)}">${esc(x.n||'زبون')}</button><div class="meta">${deptChip(x.k)}${x.note?`<span>${esc(x.note)}</span>`:''}</div></div><b class="num">${money(x.amount)}</b></li>`).join('')}</ul>`:empty('ما انستلم شي بهذا اليوم')}</section>
+    ${pays.length?`<ul class="rows">${pays.map(x=>`<li><div><button class="name" data-act="open-patient" data-id="${esc(x.pid)}">${esc(x.n||'زبون')}</button><div class="meta">${deptChip(x.k)}${x.note?`<span>${esc(x.note)}</span>`:''}</div></div><span class="actions"><b class="num">${money(x.amount)}</b><button class="btn sm ghost w" data-act="del-lpay" data-id="${x.id}" data-pid="${esc(x.pid)}" data-path="${esc(lkey(x.k,x.date))}">حذف</button></span></li>`).join('')}</ul>`:empty('ما انستلم شي بهذا اليوم')}</section>
     <section class="panel"><div class="ph"><h2>المصاريف</h2><span class="muted small">${money(expT+staffT)}</span></div>
     ${exps.length||staff.length?`<ul class="rows">${exps.map(e=>`<li><div><b>${esc(e.cat||'مصروف')}</b><div class="meta">${e.k==='general'?chip('عام'):deptChip(e.k)}${e.note?`<span>${esc(e.note)}</span>`:''}</div></div><b class="num">${money(e.amount)}</b></li>`).join('')}${staff.map(x=>`<li><div><b>${esc(PAYK[x.kind]||'صرف')} · ${esc(emp(x.eid)?.name||'')}</b>${x.note?`<div class="meta"><span>${esc(x.note)}</span></div>`:''}</div><b class="num">${money(x.amount)}</b></li>`).join('')}</ul>`:empty('ما اكو مصاريف بهذا اليوم')}</section>
     ${Object.keys(ops).length?`<section class="panel"><div class="ph"><h2>شغل الموظفين بهذا اليوم</h2></div><ul class="rows">${Object.entries(ops).sort((a,b)=>b[1].amt-a[1].amt).map(([o,x])=>`<li><b>${esc(emp(o)?.name||'موظف محذوف')}</b><span class="meta"><span class="num">${x.n} جلسة</span>${x.shots?`·<span class="num">${x.shots.toLocaleString('en-US')} ضربة</span>`:''}·<b class="num">${money(x.amt)}</b></span></li>`).join('')}</ul></section>`:''}
@@ -923,6 +923,11 @@ async function findAppt(aid,date){const d=await getDoc('days/'+date);const a=d?.
 /* ---------- actions ---------- */
 const A={
   close:closeModal,
+  async 'del-lpay'(el){const {id,pid,path}=el.dataset;const x=(await getDoc(path))?.p?.[id];if(!x||x.del){toast('ما لكينا الدفعة',true);return}
+    const p=pid?await getDoc('patients/'+pid):null;
+    confirmBox('حذف الدفعة',`متأكد تريد تحذف دفعة <b class="num">${money(x.amount)}</b> من ${esc(x.n||'زبون')}؟${p?'':' (ملف الزبون محذوف، فتنحذف من حسابات القسم بس.)'}`,async()=>{
+      await upsert(path,{p:{[id]:{del:true}}});if(p&&p.payments?.[id]&&!p.payments[id].del)await writePatient(pid,{payments:{[id]:{del:true}}});
+      await logAct('delete','payment',`دفعة · ${x.n||'زبون'} · ${money(x.amount)} · ${x.date}`,{pid,id,path},x);toast('انحذفت الدفعة')})},
   'go-day'(){S.finMode='day';S.fday=today();location.hash='finance'},
   'clear-debts'(){if(S.userDoc?.role!=='owner')return;const list=debtors();const total=sumBy(list,'due');
     openModal({title:'تصفير كل الديون',body:`<p style="margin:0">راح ينسجل <b>تسوية دين</b> لـ <b class="num">${list.length}</b> زبون، المجموع <b class="num">${money(total)}</b>، حتى يصير الباقي على الكل صفر.</p>
@@ -959,7 +964,10 @@ const A={
     if(!perm().depts.includes(v.type)){toast('ما عندك صلاحية على هذا القسم',true);return}
     openModal({title:'تعديل '+(DEPTS[v.type]?.v||'الزيارة'),body:visitForm({...v,pid},true),onOpen:f_=>{f_.dataset.edit='1';wireVisitForm(f_)},onSubmit:o=>saveVisit(o,null,{vid,pid})})},
   'new-visit'(el){const al=DK.filter(k=>perm().depts.includes(k));let t=el.dataset.dept||(DEPTS[S.view]?S.view:al[0]);if(!al.includes(t))t=al[0];openModal({title:'تسجيل '+(DEPTS[t].v),body:visitForm({pid:el.dataset.pid||S.pid||'',type:t}),onOpen:wireVisitForm,onSubmit:o=>saveVisit(o)})},
-  async 'del-visit'(el){const vid=el.dataset.id,pid=el.dataset.pid;const p=await getDoc('patients/'+pid);const v=p?.visits?.[vid];if(!v||v.del){toast('ما لكينا الجلسة',true);return}
+  async 'del-visit'(el){const vid=el.dataset.id,pid=el.dataset.pid;const p=await getDoc('patients/'+pid);
+    if(!p&&el.dataset.path){const path=el.dataset.path;const v=(await getDoc(path))?.v?.[vid];if(!v||v.del){toast('ما لكينا الجلسة',true);return}
+      confirmBox('حذف الجلسة',`ملف الزبون محذوف. راح تنحذف الجلسة (${money(v.price)}) من حسابات القسم.`,async()=>{await upsert(path,{v:{[vid]:{del:true}}});
+        await logAct('delete','visit',`${v.n||'زبون محذوف'} · ${money(v.price)} · ${v.date}`,{pid,id:vid,path,orphan:1},v);toast('انحذفت')});return}const v=p?.visits?.[vid];if(!v||v.del){toast('ما لكينا الجلسة',true);return}
     // payments that belong to this session: recorded with it, or a separate payment by the same client, same department, same day
     const cand=live(p.payments).filter(x=>!x.adj&&(x.vid===vid||(!x.vid&&x.dept===v.type&&x.date===v.date)));
     const list=cand.length?`<p class="muted small" style="margin:0">الدفعات المرتبطة. المأشرة تنحذف ويا الجلسة حتى ما يبقى مبلغها بالحساب:</p><div class="seg" style="flex-direction:column;align-items:stretch">${cand.map(x=>`<label class="check"><input type="checkbox" name="pd_${x.id}" checked style="position:static;opacity:1;pointer-events:auto;width:18px;height:18px"> <b class="num">${money(x.amount)}</b> <span class="muted small">${x.vid===vid?'انسجلت ويا الجلسة':'دفعة منفصلة بنفس اليوم'}${x.note?' · '+esc(x.note):''}</span></label>`).join('')}</div>`:'';
@@ -1222,11 +1230,13 @@ function vLog(){
 }
 async function restoreEntry(en){const r=en.ref||{};
   switch(en.kind){
-    case 'visit':{const p=await getDoc('patients/'+r.pid);const v=p?.visits?.[r.id];if(!v)throw userErr('ما لكينا الجلسة.');if(!v.del)throw userErr('هذي الجلسة مو محذوفة.');
+    case 'visit':{if(r.orphan&&r.path){await upsert(r.path,{v:{[r.id]:{del:false}}});break}const p=await getDoc('patients/'+r.pid);const v=p?.visits?.[r.id];if(!v)throw userErr('ما لكينا الجلسة.');if(!v.del)throw userErr('هذي الجلسة مو محذوفة.');
       const patch={visits:{[r.id]:{del:false}}};(r.payIds||[]).forEach(id=>{(patch.payments=patch.payments||{})[id]={del:false}});
       await writePatient(r.pid,patch);await upsert(lkey(v.type,v.date),{v:{[r.id]:{del:false}}});
       for(const id of r.payIds||[]){const x=p.payments?.[id];if(x)await upsert(lkey(x.dept,x.date),{p:{[id]:{del:false}}})}break}
-    case 'payment':{const p=await getDoc('patients/'+r.pid);const x=p?.payments?.[r.id];if(!x)throw userErr('ما لكينا الدفعة.');if(!x.del)throw userErr('هذي الدفعة مو محذوفة.');
+    case 'payment':{const p=r.pid?await getDoc('patients/'+r.pid):null;const x=p?.payments?.[r.id];
+      if(!x&&r.path){const lx=(await getDoc(r.path))?.p?.[r.id];if(!lx)throw userErr('ما لكينا الدفعة.');if(!lx.del)throw userErr('هذي الدفعة مو محذوفة.');await upsert(r.path,{p:{[r.id]:{del:false}}});break}
+      if(!x)throw userErr('ما لكينا الدفعة.');if(!x.del)throw userErr('هذي الدفعة مو محذوفة.');
       await writePatient(r.pid,{payments:{[r.id]:{del:false}}});if(!x.adj)await upsert(lkey(x.dept,x.date),{p:{[r.id]:{del:false}}});break}
     case 'expense':{const d=await getDoc(r.path);const e=d?.e?.[r.id];if(!e)throw userErr('ما لكينا المصروف.');if(!e.del)throw userErr('هذا المصروف مو محذوف.');
       await upsert(r.path,{e:{[r.id]:{del:false}}});if(e.fixedKey)await upsert('fixedpaid/'+e.fixedYear,{items:{[e.fixedKey]:{del:false}}});break}
