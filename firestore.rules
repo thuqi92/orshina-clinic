@@ -46,6 +46,8 @@ service cloud.firestore {
     match /empPrivate/{id} { allow read, write: if isAdmin(); }
     match /settings/{id}   { allow read: if isStaff(); allow write: if isAdmin(); }
     match /fixedpaid/{id}  { allow read, write: if isAdmin(); }
+    match /suppliers/{id}  { allow read, write: if isAdmin(); }
+    match /stock/{id}      { allow read, write: if isAdmin(); }
 
     match /patients/{id} { allow read, create, update: if isStaff(); allow delete: if isOwner(); }
     match /index/{id}    { allow read, create, update: if isStaff(); allow delete: if isAdmin(); }

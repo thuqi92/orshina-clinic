@@ -279,6 +279,7 @@ body{margin:0;font-size:14px}img{max-width:100%}[hidden]{display:none!important}
         <span class="sep" aria-hidden="true"></span>
         <a href="#finance" data-tab="finance">الحسابات العامة</a>
         <a href="#hr" data-tab="hr">الموظفين</a>
+        <a href="#suppliers" data-tab="suppliers">الشركات</a>
         <a href="#log" data-tab="log">السجل</a>
       </nav>
       <div class="who" id="who" hidden></div>
@@ -748,13 +749,13 @@ function render(){
   if(S.pid)body=vPatient();
   else if(S.eid)body=vEmp();
   else if(DEPTS[S.view])body=vDept(S.view);
-  else body=({home:vHome,clients:vClients,finance:vFinance,hr:vHR,log:vLog}[S.view]||vHome)();
+  else body=({home:vHome,clients:vClients,finance:vFinance,hr:vHR,suppliers:vSuppliers,log:vLog}[S.view]||vHome)();
   main.innerHTML=(S.err?`<div class="banner bad">صار خلل بالاتصال بالبيانات. حدّث الصفحة.</div>`:'')+(S.slow?'<div class="banner">ممكن البيانات المعروضة مو آخر نسخة، الاتصال بطيء.</div>':'')+body;
   syncSubs();
   if(focused==='q'||focused==='dq'){const q=document.getElementById(focused);if(q){q.focus();try{q.setSelectionRange(caret,caret)}catch(e){}}}
 }
-const ROUTES=['home','clients',...DK,'finance','hr','log'];
-function route(){const h=location.hash.replace('#','');const nv=ROUTES.includes(h)?h:'home';if(nv!==S.view){S.dq='';S.dev='all'}S.view=nv;S.pid=null;S.eid=null}
+const ROUTES=['home','clients',...DK,'finance','hr','suppliers','log'];
+function route(){const h=location.hash.replace('#','');const nv=ROUTES.includes(h)?h:'home';if(nv!==S.view){S.dq='';S.dev='all'}S.view=nv;S.pid=null;S.eid=null;S.sid=null;S.stid=null}
 addEventListener('hashchange',()=>{route();render();scrollTo(0,0)});
 
 /* ---------- modal & toast ---------- */
@@ -841,7 +842,8 @@ function visitForm(v={},edit){
   <div class="sect f-injection grid3"><span class="sect-t">تفاصيل الحقن</span>
    ${f('المادة',`<input name="product" list="dl-product" value="${val(d.product)}">`)}${f('الشركة',`<input name="brand" list="dl-brand" dir="auto" value="${val(d.brand)}">`)}${f('المنطقة',`<input name="iarea" list="dl-area" value="${type==='injection'?val(d.area):''}">`)}
    ${f('الكمية',`<input name="amount" inputmode="decimal" value="${val(d.amount)}">`)}${f('الوحدة',`<select name="unit">${opts([['وحدة','وحدة (U)'],['مل','مل (ml)'],['سرنجة','سرنجة'],['خيط','خيط']],d.unit||'وحدة')}</select>`)}${f('رقم الباتش',`<input name="batch" dir="ltr" value="${val(d.batch)}">`)}
-   ${f('الجلسة الجاية',`<input type="date" name="nextInj" value="${type==='injection'?val(d.next):''}">`)}</div>
+   ${f('الجلسة الجاية',`<input type="date" name="nextInj" value="${type==='injection'?val(d.next):''}">`)}
+   ${stocks().length?f('من المخزن (تنقص الكمية تلقائياً)',`<select name="stk"><option value="">— ما من المخزن —</option>${opts(stocks().map(x=>[x.id,`${x.name} · الموجود ${Math.round(stockQty(x)*100)/100} ${x.unit||''}`]),type==='injection'?(d.stk||''):'')}</select>`,'full'):''}</div>
   <div class="sect f-skin grid2"><span class="sect-t">تفاصيل جلسة تنظيف البشرة</span>
    ${f('نوع الجلسة',`<input name="kind" list="dl-skin" value="${val(d.kind)}">`)}${f('نوع البشرة',`<select name="skinType">${opts([['','—'],['دهنية','دهنية'],['جافة','جافة'],['مختلطة','مختلطة'],['حساسة','حساسة'],['عادية','عادية']],d.skinType||'')}</select>`)}
    ${f('الأوبريتر',`<select name="sop">${empOpts(type==='skin'&&d.operator?d.operator:myOp)}</select>`)}${f('الجلسة الجاية',`<input type="date" name="nextSkin" value="${type==='skin'?val(d.next):''}">`)}</div>
@@ -870,13 +872,15 @@ async function saveVisit(o,appt,ed){
   const type=o.type;let d={};const keep=!!ed;
   if(type==='dental')d={procedure:o.procedure.trim(),teeth:parseTeeth(o.teeth).join(', ')};
   else if(type==='laser'){const sn=o.sessionNo.trim()||(!ed&&$('#mform [name=sessionNo]')?.placeholder)||'';d={device:o.device,operator:o.lop,shots:o.shots.trim(),energy:o.energy.trim(),area:[...Object.keys(o).filter(k=>/^lz_\d+$/.test(k)).sort((a,b)=>+a.slice(3)-+b.slice(3)).map(k=>o[k]),...splitAreas(o.larea)].join(' + '),sessionNo:sn,sessionTotal:o.sessionTotal.trim(),next:o.nextLaser||''}}
-  else if(type==='injection')d={product:o.product.trim(),brand:o.brand.trim(),area:o.iarea.trim(),amount:o.amount.trim(),unit:o.unit,batch:o.batch.trim(),next:o.nextInj||''};
+  else if(type==='injection')d={product:o.product.trim(),brand:o.brand.trim(),area:o.iarea.trim(),amount:o.amount.trim(),unit:o.unit,batch:o.batch.trim(),next:o.nextInj||'',stk:o.stk||''};
   else if(type==='skin')d={kind:o.kind.trim(),skinType:o.skinType,operator:o.sop,next:o.nextSkin||''};
   if(!keep)Object.keys(d).forEach(k=>{if(d[k]==='')delete d[k]});
   const price=num(o.price);const note=(o.note||'').trim();const by=byMe();
   if(ed){
     const pid=ed.pid;const p=await getPatient(pid);const old=p.visits?.[ed.vid];if(!old||old.del)throw userErr('ما لكينا الجلسة.');
     if(old.type!==type){['procedure','teeth','device','operator','shots','energy','area','sessionNo','sessionTotal','next','product','brand','amount','unit','batch','kind','skinType'].forEach(k=>{if(!(k in d))d[k]=''})}
+    if(old.d?.stkMv&&!(type==='injection'&&d.stk===old.d.stk))await stockUnuse(old.d,true);
+    if(type==='injection'&&d.stk){if(old.d?.stk===d.stk&&old.d?.stkMv)d.stkMv=old.d.stkMv;await stockUse(d,ed.vid,pid,o.date)}
     const ca=old.createdAt||Date.now();
     const patch={visits:{[ed.vid]:{type,date:o.date,d,price,note,createdAt:ca,editedBy:by}}};
     const st=PROC_TO_STATUS[d.procedure||''];
@@ -894,6 +898,7 @@ async function saveVisit(o,appt,ed){
   const pid=await resolvePid(o);const p=await getPatient(pid);
   const paid=num(o.paid);const now=Date.now();
   const vid=rid(),payid=rid();
+  if(type==='injection'&&d.stk)await stockUse(d,vid,pid,o.date);
   const patch={visits:{[vid]:{type,date:o.date,d,price,note,createdAt:now,by}}};
   const lpatch={v:{[vid]:{pid,n:p.name,date:o.date,d,price,note,createdAt:now,by}}};
   if(paid>0){patch.payments={[payid]:{dept:type,amount:paid,date:o.date,note:'مع الجلسة',vid,createdAt:now,by}};lpatch.p={[payid]:{pid,n:p.name,amount:paid,date:o.date,note:'مع الجلسة',vid}}}
@@ -975,7 +980,7 @@ const A={
     openModal({title:'حذف الجلسة',body:`<p style="margin:0">راح تنحذف ${DEPTS[v.type]?.v||'الزيارة'} <b>${esc(p.name)}</b> بتاريخ ${fmtShort(v.date)} (${money(v.price)}).</p>${list}`,submit:'نعم، احذف',danger:true,onSubmit:async o=>{
       const linked=cand.filter(x=>o['pd_'+x.id]);
       const patch={visits:{[vid]:{del:true}}};if(linked.length){patch.payments={};linked.forEach(x=>patch.payments[x.id]={del:true})}
-      await writePatient(pid,patch);await upsert(lkey(v.type,v.date),{v:{[vid]:{del:true}}});
+      await writePatient(pid,patch);await upsert(lkey(v.type,v.date),{v:{[vid]:{del:true}}});await stockUnuse(v.d,true);
       for(const x of linked)await upsert(lkey(x.dept,x.date),{p:{[x.id]:{del:true}}});
       await logAct('delete','visit',vLabel(v.type,p.name,v.price,v.date)+(linked.length?' · ويا الدفعة '+money(sumBy(linked,'amount')):''),{pid,id:vid,payIds:linked.map(x=>x.id)},v);toast(linked.length?'انحذفت الجلسة ودفعتها':'انحذفت')}})},
   async 'new-pay'(el){const pid=el.dataset.pid||S.pid;const p=await getDoc('patients/'+pid);if(!p){toast('ما لكينا الزبون',true);return}
@@ -994,7 +999,7 @@ const A={
   async 'del-exp'(el){const id=el.dataset.id;let path=el.dataset.path;
     if(!path||path==='undefined'){const m=S.month;for(const k of [...DK,'general']){for(const s of ['a','b','c']){const pth=`ledger/${k}_${m}_${s}`;const d=await getDoc(pth);if(d?.e?.[id]){path=pth;break}}if(path&&path!=='undefined')break}}
     const d=await getDoc(path);const e=d?.e?.[id];if(!e)return;
-    confirmBox('حذف المصروف',`متأكد تريد تحذف مصروف ${money(e.amount)}؟`,async()=>{await upsert(path,{e:{[id]:{del:true}}});if(e.fixedKey)await upsert('fixedpaid/'+e.fixedYear,{items:{[e.fixedKey]:{del:true}}});await logAct('delete','expense',`مصروف ${e.cat||''} · ${money(e.amount)} · ${e.date}`,{path,id},e);toast('انحذف المصروف')})},
+    confirmBox('حذف المصروف',`متأكد تريد تحذف مصروف ${money(e.amount)}؟`,async()=>{await upsert(path,{e:{[id]:{del:true}}});if(e.sid&&e.stx)await S.db.doc('suppliers/'+e.sid).update({tx:{[e.stx]:{del:true}}}).catch(()=>{});if(e.fixedKey)await upsert('fixedpaid/'+e.fixedYear,{items:{[e.fixedKey]:{del:true}}});await logAct('delete','expense',`مصروف ${e.cat||''} · ${money(e.amount)} · ${e.date}`,{path,id},e);toast('انحذف المصروف')})},
   tooth(el){if(!S.canWrite)return;const p=D('patients/'+S.pid);if(!p)return;const pid=S.pid;const n=el.dataset.n;const cur=(p.teeth||{})[n]||{};
     openModal({title:'السن رقم '+n,body:`<div class="seg" role="radiogroup" aria-label="حالة السن">${Object.entries(TOOTH).map(([k,t])=>`<label><input type="radio" name="s" value="${k}" ${k===(cur.s||'healthy')?'checked':''}><span>${t}</span></label>`).join('')}</div>${f('ملاحظة على السن',`<input name="note" value="${esc(cur.note||'')}" placeholder="مثلاً تسوس سطح إطباقي، حساسية برد">`)}`,
       onSubmit:async o=>{await S.db.doc('patients/'+pid).update({teeth:{[n]:{s:o.s,note:(o.note||'').trim()}}});await logAct('edit','teeth',`السن ${n} · ${p.name} · ${TOOTH[o.s]}`,{pid},cur);toast('انحفظ السن '+n)}})},
@@ -1192,8 +1197,8 @@ async function logAct(act,kind,label,ref={},before=null){
 }
 const LOG={key:'',loading:false,entries:[],err:'',stale:false,rows:[]};
 const LOG_ACT={add:['إضافة','good'],edit:['تعديل','warn'],delete:['حذف','bad'],restore:['استرجاع','acc'],purge:['حذف نهائي','bad']};
-const LOG_KIND={visit:'جلسة / زيارة',payment:'دفعة',expense:'مصروف',staffpay:'صرف لموظف',appt:'موعد',patient:'ملف زبون',employee:'موظف',settings:'إعدادات',teeth:'مخطط الأسنان'};
-const RESTORABLE=new Set(['visit','payment','expense','staffpay','appt','patient','employee']);
+const LOG_KIND={visit:'جلسة / زيارة',payment:'دفعة',expense:'مصروف',staffpay:'صرف لموظف',appt:'موعد',patient:'ملف زبون',employee:'موظف',settings:'إعدادات',teeth:'مخطط الأسنان',supplier:'شركة',suptx:'تعامل مع شركة',stock:'المخزن'};
+const RESTORABLE=new Set(['visit','payment','expense','staffpay','appt','patient','employee','suptx']);
 function logDays(){let a=S.logFrom||addDays(today(),-6),b=S.logTo||today();if(a>b)[a,b]=[b,a];const out=[];let d=b;while(d>=a&&out.length<31){out.push(d);d=addDays(d,-1)}return out}
 async function loadLog(force){
   const days=logDays();const key=days.join(',');if(!force&&LOG.key===key&&!LOG.stale)return;if(LOG.loading)return;
@@ -1233,7 +1238,7 @@ async function restoreEntry(en){const r=en.ref||{};
   switch(en.kind){
     case 'visit':{if(r.orphan&&r.path){await upsert(r.path,{v:{[r.id]:{del:false}}});break}const p=await getDoc('patients/'+r.pid);const v=p?.visits?.[r.id];if(!v)throw userErr('ما لكينا الجلسة.');if(!v.del)throw userErr('هذي الجلسة مو محذوفة.');
       const patch={visits:{[r.id]:{del:false}}};(r.payIds||[]).forEach(id=>{(patch.payments=patch.payments||{})[id]={del:false}});
-      await writePatient(r.pid,patch);await upsert(lkey(v.type,v.date),{v:{[r.id]:{del:false}}});
+      await writePatient(r.pid,patch);await upsert(lkey(v.type,v.date),{v:{[r.id]:{del:false}}});await stockUnuse(v.d,false);
       for(const id of r.payIds||[]){const x=p.payments?.[id];if(x)await upsert(lkey(x.dept,x.date),{p:{[id]:{del:false}}})}break}
     case 'payment':{const p=r.pid?await getDoc('patients/'+r.pid):null;const x=p?.payments?.[r.id];
       if(!x&&r.path){const lx=(await getDoc(r.path))?.p?.[r.id];if(!lx)throw userErr('ما لكينا الدفعة.');if(!lx.del)throw userErr('هذي الدفعة مو محذوفة.');await upsert(r.path,{p:{[r.id]:{del:false}}});break}
@@ -1248,6 +1253,9 @@ async function restoreEntry(en){const r=en.ref||{};
       for(const a of r.appts||[])await S.db.doc('patients/'+r.pid).update({appts:{[a.id]:{del:false}}}).catch(()=>{});break}
     case 'employee':{const e=emp(r.id);if(!e)throw userErr('ما لكينا الموظف.');if(!e.deleted)throw userErr('هذا الموظف مو محذوف.');
       await saveEmp(r.id,{deleted:false,active:true});if(r.uid)await S.db.doc('users/'+r.uid).update({role:r.role||'none'}).catch(()=>{});break}
+    case 'suptx':{const sp=(await getDoc('suppliers/'+r.sid));const x=sp?.tx?.[r.id];if(!x)throw userErr('ما لكينا التعامل.');if(!x.del)throw userErr('هذا التعامل مو محذوف.');
+      await S.db.doc('suppliers/'+r.sid).update({tx:{[r.id]:{del:false}}});for(const i of x.items||[])if(i.itemId&&i.mvId)await S.db.doc('stock/'+i.itemId).update({mv:{[i.mvId]:{del:false}}}).catch(()=>{});
+      if(x.expPath&&x.expId)await upsert(x.expPath,{e:{[x.expId]:{del:false}}}).catch(()=>{});break}
     default:throw userErr('هذا النوع ما يرجع تلقائياً.');
   }
   await logAct('restore',en.kind,en.label,r);LOG.stale=true;
@@ -1278,13 +1286,141 @@ document.addEventListener('change',e=>{const id=e.target.id;
   else if(id==='logAct'||id==='logWho'||id==='logKind'){S[id]=e.target.value;render()}});
 let logQT;document.addEventListener('input',e=>{if(e.target.id==='logQ'){S.logQ=e.target.value;clearTimeout(logQT);logQT=setTimeout(()=>{render();const q=document.getElementById('logQ');if(q){q.focus();q.setSelectionRange(q.value.length,q.value.length)}},250)}});
 
+
+/* ---------- companies (suppliers) & stock ----------
+   suppliers/{sid}: {name, kind:'materials'|'maintenance'|'other', phone, notes, deleted?, tx{id:{type:'buy'|'service'|'pay', date, desc, amount, items[{name,qty,price,itemId,mvId}], expPath?, expId?, del?, by, createdAt}}}
+   stock/{itemId}:  {name, kind, unit, min, deleted?, mv{id:{q:+in/-out, t:'in'|'use'|'adj', date, ref, note?, del?, by}}}
+   Payments to a company are also written as a general expense (cat 'شركات'), so the accounts stay right. */
+const SUPK={materials:'مواد',maintenance:'صيانة',other:'أخرى'};
+const STOCKK=['فلر','بوتوكس','ميزو','بلازما','خيوط','مواد ليزر','مواد أسنان','مستلزمات','أخرى'];
+const TXT={buy:['سحب مواد','acc'],service:['صيانة / خدمة','warn'],pay:['دفعة للشركة','good']};
+const sups=()=>(S.suppliers||[]).filter(x=>!x.deleted);
+const stocks=()=>(S.stock||[]).filter(x=>!x.deleted);
+const supOf=id=>(S.suppliers||[]).find(x=>x.id===id);
+const stockOf=id=>(S.stock||[]).find(x=>x.id===id);
+function supSums(s){const t=live(s?.tx);const due=sumBy(t.filter(x=>x.type!=='pay'),'amount'),paid=sumBy(t.filter(x=>x.type==='pay'),'amount');return{due,paid,bal:due-paid,last:t.reduce((m,x)=>x.date>m?x.date:m,'')}}
+const stockQty=it=>live(it?.mv).reduce((a,m)=>a+(+m.q||0),0);
+const fmtQty=(q,u)=>`${(Math.round(q*100)/100).toLocaleString('en-US')} ${esc(u||'')}`;
+
+function vSuppliers(){
+  if(!perm().admin)return noAccess();
+  if(S.sid)return vSupplier();if(S.stid)return vStockItem();
+  const tab=S.supTab||'companies';
+  const sw=`<div class="devs" role="group" aria-label="القسم"><button aria-pressed="${tab==='companies'}" data-act="sup-tab" data-t="companies">الشركات</button><button aria-pressed="${tab==='stock'}" data-act="sup-tab" data-t="stock">المخزن</button></div>`;
+  if(!S.got.suppliers||!S.got.stock)return `<section class="hello"><div><h1>الشركات</h1></div>${sw}</section>${loadingBox()}`;
+  if(tab==='stock'){
+    const list=stocks().map(it=>({it,q:stockQty(it),last:live(it.mv).reduce((m,x)=>x.date>m?x.date:m,'')})).sort((a,b)=>(a.it.name||'').localeCompare(b.it.name||'','ar'));
+    const low=list.filter(x=>x.it.min>0&&x.q<=x.it.min);
+    return `<section class="hello"><div><h1>المخزن</h1><p class="muted" style="margin:2px 0 0">${list.length} مادة${low.length?' · '+low.length+' قربت تخلص':''}</p></div><div class="actions">${sw}<button class="btn primary" data-act="stock-new">+ مادة</button></div></section>
+    ${low.length?`<div class="banner">قربت تخلص: ${low.map(x=>`<b>${esc(x.it.name)}</b> (${fmtQty(x.q,x.it.unit)})`).join('، ')}</div>`:''}
+    <section class="panel">${list.length?`<div class="tscroll"><table class="tbl"><thead><tr><th>المادة</th><th>النوع</th><th>الكمية الحالية</th><th>آخر حركة</th></tr></thead><tbody>
+     ${list.map(x=>`<tr data-act="stock-open" data-id="${esc(x.it.id)}"><td><b>${esc(x.it.name)}</b></td><td>${x.it.kind?chip(esc(x.it.kind)):'—'}</td><td class="num">${x.it.min>0&&x.q<=x.it.min?chip(fmtQty(x.q,x.it.unit),'bad'):fmtQty(x.q,x.it.unit)}</td><td>${x.last?fmtShort(x.last):'—'}</td></tr>`).join('')}
+    </tbody></table></div>`:empty('المخزن فارغ','ضيف المواد من زر "+ مادة"، أو تنضاف وحدها لما تسجل سحب مواد من شركة.')}</section>`;
+  }
+  const list=sups().map(s=>({s,...supSums(s)})).sort((a,b)=>b.bal-a.bal||cmp(b.last,a.last));
+  const owed=sumBy(list.filter(x=>x.bal>0),'bal');
+  return `<section class="hello"><div><h1>الشركات</h1><p class="muted" style="margin:2px 0 0">${list.length} شركة</p></div><div class="actions">${sw}<button class="btn primary" data-act="sup-new">+ شركة</button></div></section>
+  <section class="stats">${stat('الديون علينا للشركات',money(owed),list.filter(x=>x.bal>0).length+' شركة',owed>0?'bad':'')}${stat('مجموع التعاملات',money(sumBy(list,'due')))}${stat('المدفوع للشركات',money(sumBy(list,'paid')),'','good')}</section>
+  <section class="panel">${list.length?`<div class="tscroll"><table class="tbl"><thead><tr><th>الشركة</th><th>النوع</th><th>التلفون</th><th>التعاملات</th><th>المدفوع</th><th>الباقي علينا</th><th>آخر تعامل</th></tr></thead><tbody>
+   ${list.map(x=>`<tr data-act="sup-open" data-id="${esc(x.s.id)}"><td><b>${esc(x.s.name)}</b></td><td>${chip(SUPK[x.s.kind]||'أخرى')}</td><td><bdi dir="ltr" class="num">${esc(x.s.phone||'—')}</bdi></td><td class="num">${money(x.due)}</td><td class="num">${money(x.paid)}</td><td class="num">${x.bal>0?chip(money(x.bal),'bad'):x.bal<0?chip('زايد '+money(-x.bal),'good'):'<span class="muted">مسدد</span>'}</td><td>${x.last?fmtShort(x.last):'—'}</td></tr>`).join('')}
+  </tbody></table></div>`:empty('ما مضاف شركات بعد','ضيف الشركات اللي تسحبون منها مواد أو تسوي إلكم صيانة.')}</section>`;
+}
+function vSupplier(){
+  const s=supOf(S.sid);if(!s||s.deleted){S.sid=null;return vSuppliers()}
+  const sm=supSums(s);const tx=live(s.tx).sort((a,b)=>cmp(b.date,a.date)||(b.createdAt||0)-(a.createdAt||0));
+  return `<button class="back" data-act="sup-back">→ كل الشركات</button>
+  <section class="phead"><div><h1>${esc(s.name)}</h1><div class="meta" style="margin-top:4px">${chip(SUPK[s.kind]||'أخرى')}${s.phone?`<bdi dir="ltr" class="num">${esc(s.phone)}</bdi>`:''}${s.notes?`<span>${esc(s.notes)}</span>`:''}</div></div>
+   <div class="actions w">${s.kind!=='maintenance'?'<button class="btn primary" data-act="sup-buy">+ سحب مواد</button>':''}<button class="btn ${s.kind==='maintenance'?'primary':''}" data-act="sup-service">+ صيانة / خدمة</button><button class="btn" data-act="sup-pay">+ دفعة للشركة</button><button class="btn ghost" data-act="sup-edit">تعديل</button><button class="btn ghost" data-act="sup-del">حذف</button></div></section>
+  <section class="stats">${stat('مجموع التعاملات',money(sm.due),live(s.tx).filter(x=>x.type!=='pay').length+' تعامل')}${stat('المدفوع',money(sm.paid),'','good')}${stat('الباقي علينا',money(sm.bal),sm.bal<0?'رصيد زايد إلنا':'',sm.bal>0?'bad':'')}</section>
+  <section class="panel"><div class="ph"><h2>التعاملات</h2></div>
+  ${tx.length?`<div class="tscroll"><table class="tbl"><thead><tr><th>التاريخ</th><th>النوع</th><th>التفاصيل</th><th>المبلغ</th><th></th></tr></thead><tbody>
+   ${tx.map(x=>`<tr><td class="num" style="white-space:nowrap">${fmtShort(x.date)}</td><td>${chip(...(TXT[x.type]||['—','']))}</td><td class="td-detail">${(x.items||[]).map(i=>`${esc(i.name)} × ${(+i.qty).toLocaleString('en-US')}${i.price?` (${money(i.price)})`:''}`).join('، ')}${x.desc?`<div>${esc(x.desc)}</div>`:''}</td><td class="num" style="white-space:nowrap">${x.type==='pay'?'−':''}${money(x.amount)}</td><td><button class="btn sm ghost" data-act="sup-txdel" data-id="${x.id}">حذف</button></td></tr>`).join('')}
+  </tbody></table></div>`:empty('ما اكو تعاملات بعد')}</section>`;
+}
+function vStockItem(){
+  const it=stockOf(S.stid);if(!it||it.deleted){S.stid=null;return vSuppliers()}
+  const mv=live(it.mv).sort((a,b)=>cmp(b.date,a.date)||(b.at||0)-(a.at||0));const q=stockQty(it);
+  const inn=sumBy(mv.filter(m=>m.q>0),'q'),used=-sumBy(mv.filter(m=>m.q<0&&m.t==='use'),'q');
+  const what=m=>m.t==='in'?`وارد من ${esc(supOf(m.ref?.sid)?.name||'شركة')}`:m.t==='use'?`استخدام بجلسة <button class="name" data-act="open-patient" data-id="${esc(m.ref?.pid||'')}">${esc(pent(m.ref?.pid)?.n||'زبون')}</button>`:`تعديل يدوي${m.note?' · '+esc(m.note):''}`;
+  return `<button class="back" data-act="sup-back">→ المخزن</button>
+  <section class="phead"><div><h1>${esc(it.name)}</h1><div class="meta" style="margin-top:4px">${it.kind?chip(esc(it.kind)):''}<span>الوحدة: ${esc(it.unit||'—')}</span>${it.min?`<span>تنبيه عند ${fmtQty(it.min,it.unit)}</span>`:''}</div></div>
+   <div class="actions w"><button class="btn primary" data-act="stock-adj">تعديل الكمية</button><button class="btn ghost" data-act="stock-edit">تعديل البيانات</button><button class="btn ghost" data-act="stock-del">حذف</button></div></section>
+  <section class="stats">${stat('الكمية الحالية',fmtQty(q,it.unit),'',it.min>0&&q<=it.min?'bad':'good')}${stat('مجموع الوارد',fmtQty(inn,it.unit))}${stat('مجموع المستخدم بالجلسات',fmtQty(used,it.unit))}</section>
+  <section class="panel"><div class="ph"><h2>حركة المادة</h2></div>
+  ${mv.length?`<ul class="rows">${mv.map(m=>`<li><div><b>${what(m)}</b><div class="meta"><span>${fmtShort(m.date)}</span></div></div>${chip((m.q>0?'+':'')+fmtQty(m.q,it.unit),m.q>0?'good':'bad')}</li>`).join('')}</ul>`:empty('ما اكو حركة بعد')}</section>`;
+}
+
+/* ---- stock movements from injection sessions ---- */
+async function stockUse(d,vid,pid,date){if(!d?.stk)return;const q=num(d.amount)||1;const mvId=d.stkMv||rid();d.stkMv=mvId;d.stkQ=q;
+  await S.db.doc('stock/'+d.stk).update({mv:{[mvId]:{q:-q,t:'use',date,ref:{pid,vid},by:byMe(),at:Date.now(),del:false}}})}
+async function stockUnuse(d,flag=true){if(d?.stk&&d.stkMv)await S.db.doc('stock/'+d.stk).update({mv:{[d.stkMv]:{del:flag}}}).catch(()=>{})}
+
+/* ---- forms ---- */
+function supForm(s={}){return `<div class="grid2">${f('اسم الشركة',`<input name="name" required value="${esc(s.name||'')}">`,'full')}
+  ${f('النوع',`<select name="kind">${opts(Object.entries(SUPK),s.kind||'materials')}</select>`)}${f('التلفون',`<input name="phone" type="tel" dir="ltr" value="${esc(s.phone||'')}">`)}
+  ${f('ملاحظات',`<textarea name="notes" rows="2" placeholder="مثلاً المندوب، المواد اللي يجيبوها">${esc(s.notes||'')}</textarea>`,'full')}</div>`}
+async function payToSupplier(s,amount,date,note){const txid=rid(),eid=rid(),path=lkey('general',date);
+  await upsert(path,{e:{[eid]:{amount,date,cat:'شركات',note:`دفع لشركة ${s.name}${note?' · '+note:''}`,sid:s.id,stx:txid,createdAt:Date.now(),by:byMe()}}});
+  await S.db.doc('suppliers/'+s.id).update({tx:{[txid]:{type:'pay',date,amount,desc:note||'',expPath:path,expId:eid,by:byMe(),createdAt:Date.now()}}});
+  await logAct('add','suptx',`دفعة لشركة ${s.name} · ${money(amount)} · ${date}`,{sid:s.id,id:txid});}
+Object.assign(A,{
+  'sup-tab'(el){S.supTab=el.dataset.t;S.sid=null;S.stid=null;render()},
+  'sup-back'(){S.sid=null;S.stid=null;render();scrollTo(0,0)},
+  'sup-open'(el){S.sid=el.dataset.id;S.stid=null;render();scrollTo(0,0)},
+  'stock-open'(el){S.stid=el.dataset.id;S.sid=null;render();scrollTo(0,0)},
+  'sup-new'(){openModal({title:'شركة جديدة',body:supForm(),onSubmit:async o=>{const ref=S.db.collection('suppliers').doc();await ref.set({name:o.name.trim(),kind:o.kind,phone:(o.phone||'').trim(),notes:(o.notes||'').trim(),tx:{},createdAt:Date.now()});await logAct('add','supplier',o.name.trim(),{sid:ref.id});toast('انضافت الشركة')}})},
+  'sup-edit'(){const s=supOf(S.sid);if(!s)return;openModal({title:'تعديل الشركة',body:supForm(s),onSubmit:async o=>{await S.db.doc('suppliers/'+s.id).update({name:o.name.trim(),kind:o.kind,phone:(o.phone||'').trim(),notes:(o.notes||'').trim()});await logAct('edit','supplier',s.name,{sid:s.id},{name:s.name,kind:s.kind,phone:s.phone,notes:s.notes});toast('انحفظت')}})},
+  'sup-del'(){const s=supOf(S.sid);if(!s)return;confirmBox('حذف الشركة',`راح تنحذف <b>${esc(s.name)}</b> من القائمة. المبالغ اللي انصرفتلها تبقى بالحسابات.`,async()=>{await S.db.doc('suppliers/'+s.id).update({deleted:true});await logAct('delete','supplier',s.name,{sid:s.id},{name:s.name,...supSums(s)});S.sid=null;toast('انحذفت الشركة')})},
+  'sup-buy'(){const s=supOf(S.sid);if(!s)return;const names=stocks().map(x=>x.name);
+    const row=i=>`<div class="grid3" style="grid-template-columns:2fr 1fr 1fr 1fr">${f(i===0?'المادة':'',`<input name="ln_${i}" list="dl-stk" placeholder="${i===0?'مثلاً فلر Juvederm':''}">`)}${f(i===0?'الكمية':'',`<input name="lq_${i}" inputmode="decimal" dir="ltr">`)}${f(i===0?'الوحدة':'',`<input name="lu_${i}" list="dl-unit" placeholder="سرنجة">`)}${f(i===0?'سعر الوحدة':'',`<input name="lp_${i}" inputmode="numeric" dir="ltr">`)}</div>`;
+    openModal({title:'سحب مواد من '+esc(s.name),body:`${dl('dl-stk',names)}${dl('dl-unit',['سرنجة','فايل','وحدة','مل','علبة','قطعة','كارتون'])}<div class="grid2">${f('التاريخ',`<input type="date" name="date" required value="${today()}">`)}${f('رقم الوصل / ملاحظة',`<input name="desc">`)}</div>
+      ${[0,1,2,3,4,5].map(row).join('')}
+      <label class="check"><input type="checkbox" name="toStock" checked> ضيف المواد للمخزن</label>
+      <div class="grid2">${f('المجموع (يتحسب وحده إذا تركته فارغ)',`<input name="amount" inputmode="numeric" dir="ltr" placeholder="0">`)}${f('دفعت الآن',`<input name="paid" inputmode="numeric" dir="ltr" placeholder="0">`)}</div>
+      <p class="small muted" id="buyTot" style="margin:0"></p>`,
+      onOpen:form=>{const upd=()=>{let t=0;for(let i=0;i<6;i++)t+=num(form['lq_'+i]?.value)*num(form['lp_'+i]?.value);form.querySelector('#buyTot').textContent=t?'مجموع المواد: '+money(t):''};form.addEventListener('input',upd)},
+      onSubmit:async o=>{const lines=[];for(let i=0;i<6;i++){const nm=(o['ln_'+i]||'').trim(),q=num(o['lq_'+i]),pr=num(o['lp_'+i]);if(!nm)continue;if(q<=0)throw userErr('اكتب كمية للمادة: '+nm);lines.push({name:nm,qty:q,unit:(o['lu_'+i]||'').trim(),price:pr})}
+        if(!lines.length)throw userErr('اكتب مادة وحدة على الأقل ويا كميتها.');
+        const amount=num(o.amount)||lines.reduce((a,l)=>a+l.qty*l.price,0);const txid=rid();
+        if(o.toStock){for(const l of lines){let it=stocks().find(x=>(x.name||'').trim()===l.name);let id=it?.id;
+            if(!id){const ref=S.db.collection('stock').doc();id=ref.id;await ref.set({name:l.name,unit:l.unit||'قطعة',kind:'',min:0,mv:{},createdAt:Date.now()})}
+            l.itemId=id;l.mvId=rid();await S.db.doc('stock/'+id).update({mv:{[l.mvId]:{q:l.qty,t:'in',date:o.date,ref:{sid:s.id,txid},by:byMe(),at:Date.now()}}})}}
+        await S.db.doc('suppliers/'+s.id).update({tx:{[txid]:{type:'buy',date:o.date,desc:(o.desc||'').trim(),amount,items:lines,by:byMe(),createdAt:Date.now()}}});
+        await logAct('add','suptx',`سحب مواد من ${s.name} · ${lines.map(l=>l.name+' ×'+l.qty).join('، ')} · ${money(amount)}`,{sid:s.id,id:txid});
+        const paid=num(o.paid);if(paid>0)await payToSupplier(s,paid,o.date,'مع السحب');toast('انسجل السحب')}})},
+  'sup-service'(){const s=supOf(S.sid);if(!s)return;openModal({title:'صيانة / خدمة من '+esc(s.name),body:`<div class="grid2">${f('التاريخ',`<input type="date" name="date" required value="${today()}">`)}${f('المبلغ (دينار)',`<input name="amount" required inputmode="numeric" dir="ltr">`)}${f('شنو انسوى',`<input name="desc" required placeholder="مثلاً صيانة جهاز Deka Again 2">`,'full')}${f('دفعت الآن',`<input name="paid" inputmode="numeric" dir="ltr" placeholder="0">`)}</div>`,
+    onSubmit:async o=>{const amount=num(o.amount);if(amount<=0)throw userErr('اكتب مبلغ أكبر من صفر.');const txid=rid();
+      await S.db.doc('suppliers/'+s.id).update({tx:{[txid]:{type:'service',date:o.date,desc:o.desc.trim(),amount,by:byMe(),createdAt:Date.now()}}});
+      await logAct('add','suptx',`صيانة من ${s.name} · ${o.desc.trim()} · ${money(amount)}`,{sid:s.id,id:txid});
+      const paid=num(o.paid);if(paid>0)await payToSupplier(s,paid,o.date,'مع الصيانة');toast('انسجلت الصيانة')}})},
+  'sup-pay'(){const s=supOf(S.sid);if(!s)return;const bal=supSums(s).bal;openModal({title:'دفعة لشركة '+esc(s.name),body:`<p class="muted" style="margin:0">الباقي علينا: <b class="num">${money(bal)}</b></p><div class="grid2">${f('المبلغ (دينار)',`<input name="amount" required inputmode="numeric" dir="ltr" value="${bal>0?bal:''}">`)}${f('التاريخ',`<input type="date" name="date" required value="${today()}">`)}${f('ملاحظة',`<input name="note" placeholder="نقد، تحويل…">`,'full')}</div><p class="small muted" style="margin:0">الدفعة تنسجل كمصروف بالحسابات العامة.</p>`,
+    onSubmit:async o=>{const amt=num(o.amount);if(amt<=0)throw userErr('اكتب مبلغ أكبر من صفر.');await payToSupplier(s,amt,o.date,(o.note||'').trim());toast('انسجلت الدفعة')}})},
+  'sup-txdel'(el){const s=supOf(S.sid);const x=s?.tx?.[el.dataset.id];if(!x||x.del)return;const id=el.dataset.id;
+    confirmBox('حذف التعامل',`متأكد تريد تحذف ${TXT[x.type]?.[0]||'التعامل'} بمبلغ ${money(x.amount)}؟${x.type==='buy'&&(x.items||[]).some(i=>i.mvId)?' الكميات اللي انضافت للمخزن راح تنشال.':''}${x.type==='pay'?' والمصروف المرتبط بيها ينحذف من الحسابات.':''}`,async()=>{
+      await S.db.doc('suppliers/'+s.id).update({tx:{[id]:{del:true}}});
+      for(const i of x.items||[])if(i.itemId&&i.mvId)await S.db.doc('stock/'+i.itemId).update({mv:{[i.mvId]:{del:true}}}).catch(()=>{});
+      if(x.expPath&&x.expId)await upsert(x.expPath,{e:{[x.expId]:{del:true}}}).catch(()=>{});
+      await logAct('delete','suptx',`${TXT[x.type]?.[0]||'تعامل'} · ${s.name} · ${money(x.amount)} · ${x.date}`,{sid:s.id,id},x);toast('انحذف')})},
+  'stock-new'(){openModal({title:'مادة جديدة',body:stockForm(),onSubmit:async o=>{const ref=S.db.collection('stock').doc();const q=num(o.qty);const mv={};if(q)mv[rid()]={q,t:'adj',date:today(),note:'الكمية الأولى',by:byMe(),at:Date.now()};
+    await ref.set({name:o.name.trim(),kind:o.kind||'',unit:(o.unit||'').trim()||'قطعة',min:num(o.min),mv,createdAt:Date.now()});await logAct('add','stock',`${o.name.trim()} · ${q} ${o.unit||''}`,{id:ref.id});toast('انضافت المادة')}})},
+  'stock-edit'(){const it=stockOf(S.stid);if(!it)return;openModal({title:'تعديل المادة',body:stockForm(it,true),onSubmit:async o=>{await S.db.doc('stock/'+it.id).update({name:o.name.trim(),kind:o.kind||'',unit:(o.unit||'').trim()||'قطعة',min:num(o.min)});await logAct('edit','stock',it.name,{id:it.id},{name:it.name,kind:it.kind,unit:it.unit,min:it.min});toast('انحفظت')}})},
+  'stock-adj'(){const it=stockOf(S.stid);if(!it)return;const q=stockQty(it);openModal({title:'تعديل كمية '+esc(it.name),body:`<p class="muted" style="margin:0">الكمية الحالية: <b class="num">${fmtQty(q,it.unit)}</b></p><div class="grid2">${f('الكمية الصحيحة الآن',`<input name="real" required inputmode="decimal" dir="ltr" value="${q}">`)}${f('السبب',`<input name="note" required list="dl-adj" placeholder="جرد، تالف، هدية…">`)}</div>${dl('dl-adj',['جرد','تالف','منتهي الصلاحية','هدية','استخدام بدون جلسة'])}`,
+    onSubmit:async o=>{const diff=num(o.real)-q;if(!diff)return;await S.db.doc('stock/'+it.id).update({mv:{[rid()]:{q:diff,t:'adj',date:today(),note:o.note.trim(),by:byMe(),at:Date.now()}}});await logAct('edit','stock',`${it.name} · ${diff>0?'+':''}${diff} · ${o.note.trim()}`,{id:it.id});toast('انعدلت الكمية')}})},
+  'stock-del'(){const it=stockOf(S.stid);if(!it)return;confirmBox('حذف المادة',`راح تنحذف <b>${esc(it.name)}</b> من المخزن.`,async()=>{await S.db.doc('stock/'+it.id).update({deleted:true});await logAct('delete','stock',it.name,{id:it.id},{name:it.name,qty:stockQty(it)});S.stid=null;toast('انحذفت المادة')})},
+});
+function stockForm(it={},edit){return `<div class="grid2">${f('اسم المادة',`<input name="name" required value="${esc(it.name||'')}" placeholder="مثلاً فلر Juvederm Volift">`,'full')}
+  ${f('النوع',`<select name="kind"><option value="">—</option>${opts(STOCKK.map(x=>[x,x]),it.kind||'')}</select>`)}${f('الوحدة',`<input name="unit" list="dl-unit2" value="${esc(it.unit||'')}" placeholder="سرنجة، وحدة، فايل…">`)}
+  ${edit?'':f('الكمية الموجودة هسه',`<input name="qty" inputmode="decimal" dir="ltr" placeholder="0">`)}${f('نبهني إذا نزلت الكمية إلى',`<input name="min" inputmode="decimal" dir="ltr" value="${it.min||''}" placeholder="مثلاً 2">`)}</div>${dl('dl-unit2',['سرنجة','فايل','وحدة','مل','علبة','قطعة'])}`}
+
+document.addEventListener('change',e=>{if(e.target.name==='stk'){const it=stockOf(e.target.value);const fm=e.target.form;if(it&&fm&&fm.product&&!fm.product.value)fm.product.value=it.name}});
+
 /* ---- session lifecycle ---- */
 let PIN=[],pinnedOn=new Set(),userUnsub=null,pinRetry={};
 function stopPinned(){PIN.forEach(u=>{try{u()}catch(e){}});PIN=[];pinnedOn=new Set();pinRetry={}}
 function resetData(){for(const [,rec] of SUBS){try{rec.unsub&&rec.unsub()}catch(e){}}SUBS.clear();NEED=new Set();
-  Object.assign(S,{index:[],employees:[],settings:[],pidx:new Map(),got:{},fresh:{},err:null,slow:false,pid:null,eid:null,userDoc:null,myEmp:null,isOwner:false,role:null});RAW.employees=[];RAW.empPrivate=[]}
+  Object.assign(S,{index:[],employees:[],settings:[],suppliers:[],stock:[],sid:null,stid:null,pidx:new Map(),got:{},fresh:{},err:null,slow:false,pid:null,eid:null,userDoc:null,myEmp:null,isOwner:false,role:null});RAW.employees=[];RAW.empPrivate=[]}
 function startPinned(){
-  const admin=['owner','admin'].includes(S.userDoc?.role);const cols=[...PINNED,...(admin?['empPrivate']:[])];
+  const admin=['owner','admin'].includes(S.userDoc?.role);const cols=[...PINNED,...(admin?['empPrivate','suppliers','stock']:[])];
   for(const col of cols){if(pinnedOn.has(col))continue;pinnedOn.add(col);
     PIN.push(fdb.collection(col).onSnapshot(qs=>{const docs=qs.docs.map(d=>({id:d.id,...d.data()}));
       if(col==='employees'||col==='empPrivate'){RAW[col]=docs;mergeEmps()}else S[col]=docs;

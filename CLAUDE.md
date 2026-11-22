@@ -38,6 +38,14 @@ Reads are kept low: the app never loads whole collections except the small pinne
 - Deleting an entry inside a map is soft: the entry is set to `{del:true}`. Never delete patient financial history silently.
 - Deleting a patient is soft too: `patients/{pid}.del=true` (plus `delAt`, `delBy`), and the index entry gets `del:true`.
   Only the owner can purge a file for good (rules: patients delete = owner). Deleted employees get `deleted:true` and stay in `S.empAll`, so their names still resolve.
+- `suppliers/{sid}` (admin only) holds the companies (الشركات):
+  - Fields: `name, kind (materials|maintenance|other), phone, notes, deleted?, tx{id:{type:'buy'|'service'|'pay', date, desc, amount, items[{name,qty,unit,price,itemId,mvId}], expPath?, expId?, del?}}`.
+  - Balance owed = buy + service − pay.
+  - A company payment is also written as a general expense (`cat:'شركات'`, with `sid`/`stx` links). Deleting either one removes the other.
+- `stock/{itemId}` (admin only) holds the stock (المخزن):
+  - Fields: `name, kind, unit, min, deleted?, mv{id:{q:+in/−out, t:'in'|'use'|'adj', date, ref, note?, del?}}`. Quantity = sum of live `q`.
+  - A buy line adds an `in` movement.
+  - An injection session with `d.stk` adds a `use` movement (`d.stkMv`, `d.stkQ`). Editing, deleting or restoring the session updates that movement.
 - `log/{YYYY-MM-DD}/by/{uid}` is the activity log: `e{id:{at,who,act,kind,label,ref,before?}}`.
   - `act` is add | edit | delete | restore | purge.
   - Every data-changing action calls `logAct(...)`.
