@@ -2,7 +2,10 @@ rules_version = '2';
 
 // Orshina clinic — who can read/write what.
 // Roles live in users/{uid}.role: owner | admin | operator | none.
-//   owner/admin : everything
+//   owner       : everything
+//   admin       : (إدارة) all clinic work, books, salaries, companies and stock;
+//                 no activity log, no account/role management. Monthly totals are
+//                 hidden in the page only (the books themselves stay readable).
 //   operator    : laser + skin-care work (patients, search index, appointments,
 //                 and the laser_/skin_ department books). No salaries, no other
 //                 departments' books, no settings changes.
@@ -34,12 +37,8 @@ service cloud.firestore {
       allow create: if signedIn() && request.auth.uid == uid
         && request.resource.data.role == 'owner'
         && !exists(/databases/$(database)/documents/meta/setup);
-      // the owner manages every account
+      // only the owner manages accounts and roles
       allow create, update, delete: if isOwner();
-      // admins manage staff accounts, but never an owner and never themselves
-      allow create, update: if isAdmin() && uid != request.auth.uid
-        && request.resource.data.role in ['admin', 'operator', 'none']
-        && (resource == null || resource.data.role != 'owner');
     }
 
     match /employees/{id}  { allow read: if isStaff(); allow write: if isAdmin(); }
@@ -56,7 +55,7 @@ service cloud.firestore {
     // Activity log: log/{day}/by/{uid}. Each person appends to their own doc;
     // existing entries can never be changed or removed (not even by admins).
     match /log/{day}/by/{uid} {
-      allow read: if isAdmin();
+      allow read: if isOwner();
       allow create: if isStaff() && request.auth.uid == uid
         && request.resource.data.keys().hasOnly(['e']) && request.resource.data.e.size() == 1;
       allow update: if isStaff() && request.auth.uid == uid

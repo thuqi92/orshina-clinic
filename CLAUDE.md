@@ -17,7 +17,12 @@ Laser devices live in `settings/main.laserDevices` (`l1` Deka Again 1, `l2` Deka
 ## Login & roles
 - Username + password. A username maps to the hidden address `<username>@orshina.clinic`.
 - `users/{uid}`: `{username, role, empId}`. role = `owner | admin | operator | none`.
-  - owner/admin: everything. operator: laser + skin care only (no money totals, no HR, no settings).
+  - owner: everything.
+  - admin (shown as إدارة): all clinic work, client files and debts, expenses, salaries (HR), companies and stock, and the day accounts (`vFinanceDay`, the cash received that day).
+    No monthly money figures: no month income, expenses or net, no الصافي anywhere, the finance page is forced to day mode, and department pages hide month money.
+    No log or trash, and no account or role management. In `perm()` these are `money` (owner only), `exp` (owner + admin), `owner` and `admin`.
+    The monthly hiding is UI-only, because the ledger docs must stay readable. The log and users rules are enforced server-side (owner only).
+  - operator: laser + skin care only (no money totals, no HR, no settings).
 - The first run shows a setup screen that creates the owner (`meta/setup` marks it done).
 - Staff accounts are created from the HR page through a secondary Firebase app instance (`createAccount`).
 - **Security is enforced in `firestore.rules`.** Keep UI gating (`perm()` in the page) and the rules in sync.
@@ -25,10 +30,12 @@ Laser devices live in `settings/main.laserDevices` (`l1` Deka Again 1, `l2` Deka
 ## Data model (aggregated on purpose, to stay inside the free Spark quota)
 Reads are kept low: the app never loads whole collections except the small pinned ones.
 - `patients/{pid}`: one doc per client with everything in maps:
-  `name, phone, birthYear, gender, allergies, conditions, notes, chunk, teeth{FDI:{s,note}}, visits{vid:{type,date,d,price,note,createdAt,by}}, payments{payid:{dept,amount,date,note,vid?}}, appts{aid:{date,time,svc,st}}`.
+  `name, phone, birthYear, gender, allergies, conditions, notes, ref{src,detail}, chunk, teeth{FDI:{s,note}}, visits{vid:{type,date,d,price,note,createdAt,by}}, payments{payid:{dept,amount,date,note,vid?}}, appts{aid:{date,time,svc,st}}`.
   Imported clients have ids `o<oldId>`, with `src:'eclinic'`.
+  `ref` records how the client heard about the clinic (شلون سمعتي عن عيادتنا). `src` is social | relative | people | walkin | other; `detail` holds the page name or relative's name.
+  It is required for every new client, including ones created from the picker. The index mirrors it as `rs`/`rd`, and `refPanel` counts new clients (index `c`) per day and month.
 - `index/{c00..}`: search index with ≤600 clients per doc:
-  `items{pid:{n,p,l,dep[],al,dp{dept:due},nx{dept:nextDate}}}`. It is rebuilt from the patient doc on every patient write (`entryFor`).
+  `items{pid:{c?,n,p,l,dep[],al,dp{dept:due},nx{dept:nextDate},rs?,rd?}}`. It is rebuilt from the patient doc on every patient write (`entryFor`).
 - `ledger/{dept}_{YYYY-MM}_{a|b|c}`: monthly department books, sharded by day of month (1–10 a, 11–20 b, 21–31 c):
   `v{}` visits, `p{}` payments, `e{}` expenses. `ledger/hr_{YYYY-MM}_a`: `s{}` staff payments.
 - `days/{YYYY-MM-DD}`: `appts{aid:{pid,n,time,svc,st,note}}`.
@@ -39,8 +46,8 @@ Reads are kept low: the app never loads whole collections except the small pinne
 - Deleting a patient is soft too: `patients/{pid}.del=true` (plus `delAt`, `delBy`), and the index entry gets `del:true`.
   Only the owner can purge a file for good (rules: patients delete = owner). Deleted employees get `deleted:true` and stay in `S.empAll`, so their names still resolve.
 - `suppliers/{sid}` (admin only) holds the companies (الشركات):
-  - Fields: `name, kind (materials|maintenance|other), phone, notes, deleted?, tx{id:{type:'buy'|'service'|'pay', date, desc, amount, items[{name,qty,unit,price,itemId,mvId}], expPath?, expId?, del?}}`.
-  - Balance owed = buy + service − pay.
+  - Fields: `name, kind (materials|maintenance|other), phone, notes, deleted?, tx{id:{type:'opening'|'buy'|'service'|'pay', date, desc, amount, items[{name,qty,unit,price,itemId,mvId}], expPath?, expId?, del?}}`.
+  - Balance owed = opening + buy + service − pay. `opening` (دين سابق) is debt from before the app: no stock change and no expense.
   - A company payment is also written as a general expense (`cat:'شركات'`, with `sid`/`stx` links). Deleting either one removes the other.
 - `stock/{itemId}` (admin only) holds the stock (المخزن):
   - Fields: `name, kind, unit, min, deleted?, mv{id:{q:+in/−out, t:'in'|'use'|'adj', date, ref, note?, del?}}`. Quantity = sum of live `q`.
@@ -49,7 +56,7 @@ Reads are kept low: the app never loads whole collections except the small pinne
 - `log/{YYYY-MM-DD}/by/{uid}` is the activity log: `e{id:{at,who,act,kind,label,ref,before?}}`.
   - `act` is add | edit | delete | restore | purge.
   - Every data-changing action calls `logAct(...)`.
-  - The rules make it append-only: each person writes only to their own doc and can add exactly one new entry per write. No one can change or delete entries from the app. Only admins can read it.
+  - The rules make it append-only: each person writes only to their own doc and can add exactly one new entry per write. No one can change or delete entries from the app. Only the owner can read it.
   - The السجل page reads 1–31 days and restores deleted items from the `ref` stored in each delete entry (`restoreEntry`).
 
 The page talks to Firestore through a tiny adapter (`DBA`). Its `update()` deep-merges nested maps using field paths, so concurrent adds of different visits don't clobber each other.
