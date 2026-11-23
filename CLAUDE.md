@@ -30,7 +30,8 @@ Laser devices live in `settings/main.laserDevices` (`l1` Deka Again 1, `l2` Deka
 ## Data model (aggregated on purpose, to stay inside the free Spark quota)
 Reads are kept low: the app never loads whole collections except the small pinned ones.
 - `patients/{pid}`: one doc per client with everything in maps:
-  `name, phone, birthYear, gender, allergies, conditions, notes, ref{src,detail}, chunk, teeth{FDI:{s,note}}, visits{vid:{type,date,d,price,note,createdAt,by}}, payments{payid:{dept,amount,date,note,vid?}}, appts{aid:{date,time,svc,st}}`.
+  `name, phone, birthYear, gender, allergies, conditions, notes, ref{src,detail}, chunk, teeth{FDI:{s,note}}, visits{vid:{type,date,d,price,note,createdAt,by}}, payments{payid:{dept,amount,date,note,vid?,m?}}, appts{aid:{date,time,svc,st}}`.
+  Payment method: cash is the default and stores nothing; card payments carry `m:'card'` (in the patient doc and the ledger `p` entry). Day and month accounts split cash and card (`cashCard`).
   Imported clients have ids `o<oldId>`, with `src:'eclinic'`.
   `ref` records how the client heard about the clinic (شلون سمعتي عن عيادتنا). `src` is social | relative | people | walkin | other; `detail` holds the page name or relative's name.
   It is required for every new client, including ones created from the picker. The index mirrors it as `rs`/`rd`, and `refPanel` counts new clients (index `c`) per day and month.
