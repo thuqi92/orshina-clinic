@@ -202,6 +202,17 @@ ul.appts,ul.rows,ul.visits{list-style:none;margin:0;padding:0;display:flex;flex-
 .bar .track{height:10px;background:var(--surface-2);border-radius:999px;overflow:hidden}
 .bar .fill{height:100%;border-radius:999px}
 
+.hgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:end}
+.hgrid .full{grid-column:span 3}
+.hamt{color:var(--accent);font-weight:600;margin-inline-start:6px}
+.hgrid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-items:start}
+.hbar{background:none;border:0;padding:6px 8px;margin:-2px -8px;width:calc(100% + 16px);border-radius:8px;cursor:pointer;text-align:start;color:inherit}
+.hbar:hover,.hbar.on{background:var(--surface-2)}
+.hlist{display:none}
+.hdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-inline-end:6px;vertical-align:middle}
+@media (max-width:860px){.hgrid2{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:640px){.hlist{display:block}.tscroll:has(+.hlist){display:none}.hgrid{grid-template-columns:repeat(2,minmax(0,1fr))}.hgrid .full,.hgrid .hsave{grid-column:1/-1}.hgrid .hsave{padding:12px}}
+
 /* modal */
 #modal{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
 body:has(#modal:not([hidden])){overflow:hidden}
@@ -282,6 +293,7 @@ body{margin:0;font-size:14px}img{max-width:100%}[hidden]{display:none!important}
         <a href="#hr" data-tab="hr">الموظفين</a>
         <a href="#suppliers" data-tab="suppliers">الشركات</a>
         <a href="#log" data-tab="log">السجل</a>
+        <a href="#house" data-tab="house">مصاريف البيت</a>
       </nav>
       <div class="who" id="who" hidden></div>
     </div>
@@ -368,7 +380,7 @@ function computeRole(){
 }
 function perm(){const r=S.role;const own=r==='owner',mgr=own||r==='admin';const p=mgr?ROLES.admin:(ROLES[r]||ROLES.none);
   // owner: everything. admin (إدارة): all work, but no monthly money figures, no log/trash, no account management.
-  return{...p,views:p.views||(own?ROUTES:ROUTES.filter(x=>x!=='log')),admin:mgr,owner:own,money:own,exp:mgr}}
+  return{...p,views:p.views||(own?ROUTES:ROUTES.filter(x=>x!=='log'&&x!=='house')),admin:mgr,owner:own,money:own,exp:mgr}}
 const byMe=()=>S.myEmp?.id||(S.isOwner?'owner':'');
 const pname=pid=>esc(pent(pid)?.n||'زبون محذوف');
 
@@ -754,13 +766,13 @@ function render(){
   if(S.pid)body=vPatient();
   else if(S.eid)body=vEmp();
   else if(DEPTS[S.view])body=vDept(S.view);
-  else body=({home:vHome,clients:vClients,finance:vFinance,hr:vHR,suppliers:vSuppliers,log:vLog}[S.view]||vHome)();
+  else body=({home:vHome,clients:vClients,finance:vFinance,hr:vHR,suppliers:vSuppliers,log:vLog,house:vHouse}[S.view]||vHome)();
   main.innerHTML=(S.err?`<div class="banner bad">صار خلل بالاتصال بالبيانات. حدّث الصفحة.</div>`:'')+(S.slow?'<div class="banner">ممكن البيانات المعروضة مو آخر نسخة، الاتصال بطيء.</div>':'')+body;
   syncSubs();
-  if(focused==='q'||focused==='dq'){const q=document.getElementById(focused);if(q){q.focus();try{q.setSelectionRange(caret,caret)}catch(e){}}}
+  if(focused==='q'||focused==='dq'||focused?.startsWith('hf_')){const q=document.getElementById(focused);if(q){q.focus();try{q.setSelectionRange(caret,caret)}catch(e){}}}
 }
-const ROUTES=['home','clients',...DK,'finance','hr','suppliers','log'];
-function route(){const h=location.hash.replace('#','');const nv=ROUTES.includes(h)?h:'home';if(nv!==S.view){S.dq='';S.dev='all'}S.view=nv;S.pid=null;S.eid=null;S.sid=null;S.stid=null}
+const ROUTES=['home','clients',...DK,'finance','hr','suppliers','log','house'];
+function route(){const h=location.hash.replace('#','');const nv=ROUTES.includes(h)?h:'home';if(nv!==S.view){S.dq='';S.dev='all'}S.view=nv;S.pid=null;S.eid=null;S.hset=false;S.sid=null;S.stid=null}
 addEventListener('hashchange',()=>{route();render();scrollTo(0,0)});
 
 /* ---------- modal & toast ---------- */
@@ -1230,8 +1242,8 @@ async function logAct(act,kind,label,ref={},before=null){
 }
 const LOG={key:'',loading:false,entries:[],err:'',stale:false,rows:[]};
 const LOG_ACT={add:['إضافة','good'],edit:['تعديل','warn'],delete:['حذف','bad'],restore:['استرجاع','acc'],purge:['حذف نهائي','bad']};
-const LOG_KIND={visit:'جلسة / زيارة',payment:'دفعة',expense:'مصروف',staffpay:'صرف لموظف',appt:'موعد',patient:'ملف زبون',employee:'موظف',settings:'إعدادات',teeth:'مخطط الأسنان',supplier:'شركة',suptx:'تعامل مع شركة',stock:'المخزن'};
-const RESTORABLE=new Set(['visit','payment','expense','staffpay','appt','patient','employee','suptx']);
+const LOG_KIND={visit:'جلسة / زيارة',payment:'دفعة',expense:'مصروف',staffpay:'صرف لموظف',appt:'موعد',patient:'ملف زبون',employee:'موظف',settings:'إعدادات',teeth:'مخطط الأسنان',supplier:'شركة',suptx:'تعامل مع شركة',stock:'المخزن',home:'مصاريف البيت',homeset:'إعدادات مصاريف البيت'};
+const RESTORABLE=new Set(['visit','payment','expense','staffpay','appt','patient','employee','suptx','home']);
 function logDays(){let a=S.logFrom||addDays(today(),-6),b=S.logTo||today();if(a>b)[a,b]=[b,a];const out=[];let d=b;while(d>=a&&out.length<31){out.push(d);d=addDays(d,-1)}return out}
 async function loadLog(force){
   const days=logDays();const key=days.join(',');if(!force&&LOG.key===key&&!LOG.stale)return;if(LOG.loading)return;
@@ -1289,6 +1301,7 @@ async function restoreEntry(en){const r=en.ref||{};
     case 'suptx':{const sp=(await getDoc('suppliers/'+r.sid));const x=sp?.tx?.[r.id];if(!x)throw userErr('ما لكينا التعامل.');if(!x.del)throw userErr('هذا التعامل مو محذوف.');
       await S.db.doc('suppliers/'+r.sid).update({tx:{[r.id]:{del:false}}});for(const i of x.items||[])if(i.itemId&&i.mvId)await S.db.doc('stock/'+i.itemId).update({mv:{[i.mvId]:{del:false}}}).catch(()=>{});
       if(x.expPath&&x.expId)await upsert(x.expPath,{e:{[x.expId]:{del:false}}}).catch(()=>{});break}
+    case 'home':{const x=(await getDoc(r.path))?.x?.[r.id];if(!x)throw userErr('ما لكينا المصروف.');if(!x.del)throw userErr('هذا المصروف مو محذوف.');await S.db.doc(r.path).update({x:{[r.id]:{del:false}}});break}
     default:throw userErr('هذا النوع ما يرجع تلقائياً.');
   }
   await logAct('restore',en.kind,en.label,r);LOG.stale=true;
@@ -1465,6 +1478,172 @@ function startPinned(){
     e=>{if(e.code==='permission-denied'&&(pinRetry[col]=(pinRetry[col]||0)+1)<=5){pinnedOn.delete(col);setTimeout(()=>{if(S.authState==='in'&&S.userDoc&&S.userDoc.role!=='none')startPinned()},1200*pinRetry[col]);return}
       S.got[col]=true;if(e.code!=='permission-denied')S.err=e.code||'error';scheduleRender()}))}
 }
+
+/* ---------- مصاريف البيت: the owner's private home expenses (rules: home/* = owner only) ----------
+   home/settings     {cats:{id:{n,ic,c,o,subs[],del?}}, fixed:{id:{n,cat,sub,amount,o,del?}}}
+   home/m_{YYYY-MM}  {x:{id:{date,amount,cat,sub,note,fx?,at,del?}}}   one doc per month; fx = paid fixed item */
+const HCOL=['#d9822b','#2a6fb0','#c2417a','#7a4fc4','#2b8a57','#8a6d3b','#64748b','#0e8a8a','#b5462f','#5a7d1a'];
+const HCAT0={
+  house:{n:'البيت',ic:'🛒',c:4,o:1,subs:['غذائية','خضرة وفواكه','لحوم ودجاج','خبز','منظفات','غاز','ماء شرب','أخرى']},
+  kid:{n:'ابني',ic:'👦',c:2,o:2,subs:['قسط الروضة','نقل الروضة','مستلزمات الروضة','ملابس','علاج وأدوية','ألعاب','أخرى']},
+  maid:{n:'الخادمة',ic:'🧹',c:3,o:3,subs:['الراتب الشهري','مصاريفها','أخرى']},
+  gen:{n:'المولدة',ic:'⚡',c:0,o:4,subs:['اشتراك شهري','كاز وزيت','أخرى']},
+  net:{n:'الانترنت',ic:'🌐',c:1,o:5,subs:['اشتراك شهري','كارت','أخرى']},
+  maint:{n:'صيانة البيت',ic:'🔧',c:5,o:6,subs:['كهرباء','ماء وصحيات','تبريد وتكييف','أجهزة','تصليحات عامة','أخرى']},
+  other:{n:'أخرى',ic:'📦',c:6,o:7,subs:[]}};
+const HFIX0={
+  fgen:{n:'اشتراك المولدة',cat:'gen',sub:'اشتراك شهري',amount:0,o:1},
+  fnet:{n:'اشتراك الانترنت',cat:'net',sub:'اشتراك شهري',amount:0,o:2},
+  fkg:{n:'قسط الروضة',cat:'kid',sub:'قسط الروضة',amount:0,o:3},
+  fmaid:{n:'راتب الخادمة',cat:'maid',sub:'الراتب الشهري',amount:0,o:4}};
+Object.assign(S,{hm:thisMonth,hcat:'all',hq:'',hset:false,hd:{amt:'',cat:'house',sub:'',date:'',note:''}});
+function hSet(){const d=D('home/settings');return{ready:d!==undefined,cats:d?.cats||HCAT0,fixed:d?.fixed||HFIX0}}
+const hList=m=>live(m).sort((a,b)=>(a.o||0)-(b.o||0));
+const hCat=(set,id)=>set.cats[id]||{n:'أخرى',ic:'📦',c:6,subs:[]};
+const hColor=c=>HCOL[(+c||0)%HCOL.length];
+const hPath=m=>'home/m_'+m;
+function hMonth(m){const d=D(hPath(m));return{ready:d!==undefined,xs:live(d?.x)}}
+const hLabel=(set,x)=>`${hCat(set,x.cat).n}${x.sub?' · '+x.sub:''}${x.note?' · '+x.note:''} · ${money(x.amount)} · ${x.date}`;
+async function hSaveSet(patch){const cur=await getDoc('home/settings');
+  if(cur)await S.db.doc('home/settings').update(patch);
+  else await S.db.doc('home/settings').set(mergeDeep({cats:structuredClone(HCAT0),fixed:structuredClone(HFIX0)},patch))}
+function hCatOpts(set,sel){const l=hList(set.cats);if(sel&&set.cats[sel]?.del)l.push({id:sel,...set.cats[sel]});return l.map(c=>[c.id,c.ic+' '+c.n])}
+function hSubOpts(set,cat,sel){const l=[...(hCat(set,cat).subs||[])];if(sel&&!l.includes(sel))l.unshift(sel);return '<option value="">—</option>'+opts(l.map(s=>[s,s]),sel||'')}
+const hLiveCat=(set,id)=>set.cats[id]&&!set.cats[id].del?id:hList(set.cats)[0]?.id;
+const hDefDate=m=>today().startsWith(m)?today():m+'-01';
+function hRead(o){const amount=Math.round(num(o.amount));if(!(amount>0))throw userErr('اكتب المبلغ.');if(!o.date)throw userErr('اختار التاريخ.');
+  return{amount,date:o.date,cat:o.cat,sub:o.sub||'',note:String(o.note||'').trim()}}
+function hFields(set,x){const cat=x.cat||hLiveCat(set,'house');
+  return `<div class="grid2">${f('المبلغ (دينار)',`<input name="amount" inputmode="numeric" required value="${x.amount||''}">`)}${f('التاريخ',`<input name="date" type="date" required value="${x.date||today()}">`)}
+   ${f('النوع',`<select name="cat">${opts(hCatOpts(set,cat),cat)}</select>`)}${f('التفصيل',`<select name="sub">${hSubOpts(set,cat,x.sub)}</select>`)}
+   ${f('ملاحظة',`<input name="note" value="${esc(x.note||'')}">`,'full')}</div>`}
+const hWireCat=set=>form=>{const c=form.querySelector('[name=cat]'),s=form.querySelector('[name=sub]');c.addEventListener('change',()=>{s.innerHTML=hSubOpts(set,c.value,'')})};
+function hPct(a,b){if(!b)return '';const p=Math.round((a-b)/b*100);return p===0?'نفس الشهر الماضي':(p>0?'▲ أكثر ':'▼ أقل ')+Math.abs(p)+'٪ من الشهر الماضي'}
+
+function vHouse(){
+  if(!perm().owner)return noAccess();
+  const set=hSet();if(S.hset)return vHouseSet(set);
+  const m=S.hm||thisMonth,pm=addMonths(m,-1);
+  const cur=hMonth(m),prev=hMonth(pm);const cats=hList(set.cats),fixed=hList(set.fixed);
+  const xs=cur.xs,tot=sumBy(xs,'amount'),ptot=sumBy(prev.xs,'amount');
+  const byCat={},pByCat={};xs.forEach(x=>byCat[x.cat]=(byCat[x.cat]||0)+(+x.amount||0));prev.xs.forEach(x=>pByCat[x.cat]=(pByCat[x.cat]||0)+(+x.amount||0));
+  const catIds=Object.keys(byCat).sort((a,b)=>byCat[b]-byCat[a]);const cmax=Math.max(1,...catIds.map(k=>byCat[k]));
+  const fx=fixed.map(fi=>{const ps=xs.filter(x=>x.fx===fi.id).sort((a,b)=>cmp(a.date,b.date));return{fi,ps,paid:sumBy(ps,'amount')}});
+  const unpaid=fx.filter(r=>!r.ps.length),unpaidAmt=sumBy(unpaid.map(r=>r.fi),'amount');
+  const fc=S.hcat&&S.hcat!=='all'?S.hcat:'all';const q=(S.hq||'').trim().toLowerCase();
+  const rows=xs.filter(x=>(fc==='all'||x.cat===fc)&&(!q||[x.note,x.sub,hCat(set,x.cat).n,String(x.amount)].some(s=>String(s||'').toLowerCase().includes(q.replace(/,/g,'')))))
+    .sort((a,b)=>cmp(b.date,a.date)||(b.at||0)-(a.at||0));
+  const top=catIds[0]?hCat(set,catIds[0]):null;
+  const d=S.hd,dc=hLiveCat(set,d.cat),dDate=d.date||hDefDate(m);
+  const fcat=fc!=='all'?hCat(set,fc):null;
+  let subPanel='';
+  if(fcat){const bs={};xs.filter(x=>x.cat===fc).forEach(x=>{const k=x.sub||'بدون تفصيل';bs[k]=(bs[k]||0)+(+x.amount||0)});
+    subPanel=`<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px"><div class="ph" style="margin-bottom:4px"><h2>${fcat.ic} ${esc(fcat.n)}</h2><span class="muted small">الشهر الماضي: ${money(pByCat[fc]||0)}</span></div>
+     <ul class="rows">${Object.entries(bs).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<li><span>${esc(k)}</span><b class="num">${money(v)}</b></li>`).join('')}</ul></div>`}
+  const months=[0,1,2,3,4,5].map(i=>addMonths(m,i-5)).map(mm=>{const h=hMonth(mm);return{mm,ready:h.ready,t:sumBy(h.xs,'amount')}});const mmax=Math.max(1,...months.map(h=>h.t));
+  return `<section class="hello"><div><div class="eyebrow">خاص بيك، محد غيرك يشوفه</div><h1>مصاريف البيت</h1><p class="muted" style="margin:2px 0 0">${monthLabel(m)}</p></div>
+   <div class="actions"><input type="month" id="hmonth" value="${m}" aria-label="الشهر" class="btn" style="padding:6px 10px"><button class="btn" data-act="h-settings">الأنواع والمصاريف الثابتة</button></div></section>
+  <section class="panel"><div class="ph"><h2>سجّل مصروف</h2></div>
+   <form id="hForm" class="hgrid" autocomplete="off">
+    ${f(`المبلغ (دينار) <b id="hf_amtTxt" class="hamt num">${num(d.amt)?money(num(d.amt)):''}</b>`,`<input id="hf_amt" name="amount" inputmode="numeric" required placeholder="مثلاً 25000" value="${esc(d.amt)}">`)}
+    ${f('النوع',`<select id="hf_cat" name="cat">${opts(hCatOpts(set,dc),dc)}</select>`)}
+    ${f('التفصيل',`<select id="hf_sub" name="sub">${hSubOpts(set,dc,d.sub)}</select>`)}
+    ${f('التاريخ',`<input id="hf_date" name="date" type="date" required value="${dDate}">`)}
+    ${f('ملاحظة',`<input id="hf_note" name="note" placeholder="اختياري: شنو بالضبط، من وين…" value="${esc(d.note)}">`,'full')}
+    <button class="btn primary hsave" type="submit">سجّل</button>
+   </form></section>
+  <section class="stats">${stat('مجموع الشهر',cur.ready?money(tot):'…',xs.length+' مصروف')}${stat('الشهر الماضي',prev.ready?money(ptot):'…',cur.ready&&prev.ready?hPct(tot,ptot):'')}
+   ${stat('الثابتة الباقية',unpaid.length?(unpaidAmt?money(unpaidAmt):unpaid.length+' باقية'):'✅ كلها',unpaid.length?unpaid.map(r=>r.fi.n).join('، '):'كل الثابتة مدفوعة',unpaid.length?'bad':'good')}
+   ${stat('أكثر نوع صرفت عليه',top?top.ic+' '+esc(top.n):'—',top?money(byCat[catIds[0]])+' · '+Math.round(byCat[catIds[0]]/tot*100)+'٪':'')}</section>
+  <div class="hgrid2">
+   <section class="panel"><div class="ph"><h2>المصاريف الثابتة كل شهر</h2><span class="muted small">${fx.length-unpaid.length} من ${fx.length} مدفوعة</span></div>
+    ${fx.length?`<ul class="rows">${fx.map(r=>`<li><div><b>${hCat(set,r.fi.cat).ic} ${esc(r.fi.n)}</b><div class="meta">${r.fi.amount?money(r.fi.amount):'المبلغ ينكتب وقت الدفع'}</div></div><span class="actions">${r.ps.length?chip('✅ مدفوع '+money(r.paid)+' · '+fmtDate(r.ps[0].date),'good'):`${chip('⏳ باقي','warn')}<button class="btn sm primary" data-act="h-payfix" data-id="${esc(r.fi.id)}">دفعت</button>`}</span></li>`).join('')}</ul>`:empty('ما مضاف مصاريف ثابتة','أضفها من «الأنواع والمصاريف الثابتة».')}</section>
+   <section class="panel"><div class="ph"><h2>حسب النوع</h2>${fc!=='all'?'<button class="btn sm ghost" data-act="h-cat" data-id="all">كل الأنواع</button>':'<span class="muted small">اضغط على نوع حتى تشوف تفاصيله</span>'}</div>
+    ${!cur.ready?loadingBox():catIds.length?`<div class="bars">${catIds.map(k=>{const c=hCat(set,k),v=byCat[k];return `<button class="bar hbar ${fc===k?'on':''}" data-act="h-cat" data-id="${esc(k)}"><span>${c.ic} ${esc(c.n)}</span><div class="track"><div class="fill" style="width:${v/cmax*100}%;background:${hColor(c.c)}"></div></div><b class="num">${money(v)} <small class="muted">${Math.round(v/tot*100)}٪</small></b></button>`}).join('')}</div>`:empty('ما مسجل مصاريف بهذا الشهر')}
+    ${subPanel}</section>
+  </div>
+  <section class="panel"><div class="ph"><h2>${fcat?fcat.ic+' '+esc(fcat.n):'كل المصاريف'} · ${monthLabel(m)}</h2><button class="btn sm" data-act="h-csv">تنزيل Excel</button></div>
+   <div class="search" style="margin-bottom:10px"><input id="hf_q" type="search" placeholder="ابحث بالملاحظة أو التفصيل أو المبلغ" value="${esc(S.hq||'')}" autocomplete="off"></div>
+   ${!cur.ready?loadingBox():rows.length?`<div class="tscroll"><table class="tbl"><thead><tr><th>التاريخ</th><th>النوع</th><th>التفاصيل</th><th>المبلغ</th><th></th></tr></thead><tbody>
+    ${rows.map(x=>{const c=hCat(set,x.cat);return `<tr><td class="num" style="white-space:nowrap">${fmtDate(x.date)}</td><td style="white-space:nowrap"><i class="hdot" style="background:${hColor(c.c)}"></i>${esc(c.n)}</td><td class="td-detail">${esc(x.sub||'')}${x.fx?' '+chip('ثابت','acc'):''}${x.note?`<div class="muted small">${esc(x.note)}</div>`:''}</td><td class="num" style="white-space:nowrap"><b>${money(x.amount)}</b></td>
+     <td style="white-space:nowrap"><button class="btn sm ghost" data-act="h-edit" data-m="${m}" data-id="${esc(x.id)}">تعديل</button><button class="btn sm ghost" data-act="h-del" data-m="${m}" data-id="${esc(x.id)}">حذف</button></td></tr>`}).join('')}
+    </tbody><tfoot><tr><td colspan="3"><b>المجموع${fcat||q?' (المعروض)':''}</b></td><td class="num" style="white-space:nowrap"><b>${money(sumBy(rows,'amount'))}</b></td><td></td></tr></tfoot></table></div>
+    <ul class="rows hlist">${rows.map(x=>{const c=hCat(set,x.cat);return `<li><div><b><i class="hdot" style="background:${hColor(c.c)}"></i>${esc(c.n)}${x.sub?' · '+esc(x.sub):''}</b>${x.fx?' '+chip('ثابت','acc'):''}<div class="meta">${fmtDate(x.date)}${x.note?' · '+esc(x.note):''}</div></div>
+     <span class="actions"><b class="num">${money(x.amount)}</b><button class="btn sm ghost" data-act="h-edit" data-m="${m}" data-id="${esc(x.id)}">تعديل</button><button class="btn sm ghost" data-act="h-del" data-m="${m}" data-id="${esc(x.id)}">حذف</button></span></li>`}).join('')}
+     <li><b>المجموع${fcat||q?' (المعروض)':''}</b><b class="num">${money(sumBy(rows,'amount'))}</b></li></ul>`:empty(q||fcat?'ماكو نتائج':'ما مسجل مصاريف بهذا الشهر',q||fcat?'':'سجّل أول مصروف من الخانة اللي فوك.')}</section>
+  <section class="panel"><div class="ph"><h2>آخر 6 أشهر</h2></div><div class="bars">${months.map(h=>`<button class="bar hbar ${h.mm===m?'on':''}" data-act="h-month" data-m="${h.mm}"><span>${monthLabel(h.mm)}</span><div class="track"><div class="fill" style="width:${h.t/mmax*100}%;background:var(--accent)"></div></div><b class="num">${h.ready?money(h.t):'…'}</b></button>`).join('')}</div></section>`;
+}
+function vHouseSet(set){const cats=hList(set.cats),fixed=hList(set.fixed);
+  return `<button class="back" data-act="h-settings-close">→ رجوع لمصاريف البيت</button>
+  <section class="hello"><div><h1>الأنواع والمصاريف الثابتة</h1><p class="muted" style="margin:2px 0 0">إذا تحذف نوع، مصاريفه القديمة تبقى بالحسابات.</p></div></section>
+  <div class="hgrid2">
+   <section class="panel"><div class="ph"><h2>أنواع المصاريف</h2><button class="btn sm primary" data-act="h-cat-edit">+ نوع</button></div>
+    <ul class="rows">${cats.map(c=>`<li><div><b><i class="hdot" style="background:${hColor(c.c)}"></i>${c.ic} ${esc(c.n)}</b><div class="meta">${c.subs?.length?esc(c.subs.join('، ')):'بدون تفاصيل'}</div></div><span class="actions"><button class="btn sm ghost" data-act="h-cat-edit" data-id="${esc(c.id)}">تعديل</button><button class="btn sm ghost" data-act="h-cat-del" data-id="${esc(c.id)}">حذف</button></span></li>`).join('')}</ul></section>
+   <section class="panel"><div class="ph"><h2>المصاريف الثابتة كل شهر</h2><button class="btn sm primary" data-act="h-fix-edit">+ مصروف ثابت</button></div>
+    ${fixed.length?`<ul class="rows">${fixed.map(x=>{const c=hCat(set,x.cat);return `<li><div><b>${c.ic} ${esc(x.n)}</b><div class="meta">${esc(c.n)}${x.sub?' · '+esc(x.sub):''} · ${x.amount?money(x.amount):'المبلغ ينكتب وقت الدفع'}</div></div><span class="actions"><button class="btn sm ghost" data-act="h-fix-edit" data-id="${esc(x.id)}">تعديل</button><button class="btn sm ghost" data-act="h-fix-del" data-id="${esc(x.id)}">حذف</button></span></li>`}).join('')}</ul>`:empty('ماكو مصاريف ثابتة')}
+    <p class="muted small" style="margin:10px 0 0">كل شهر تطلع هاي القائمة بصفحة مصاريف البيت، وتضغط «دفعت» حتى تنسجل. إذا دفعت مبلغ مختلف، يصير هو المبلغ للأشهر الجاية.</p></section>
+  </div>`}
+
+Object.assign(A,{
+  'h-settings'(){S.hset=true;render();scrollTo(0,0)},
+  'h-settings-close'(){S.hset=false;render();scrollTo(0,0)},
+  'h-cat'(el){const id=el.dataset.id;S.hcat=id===S.hcat?'all':id;render()},
+  'h-month'(el){S.hm=el.dataset.m;S.hcat='all';S.hd.date='';render()},
+  async 'h-edit'(el){const m=el.dataset.m,id=el.dataset.id,path=hPath(m);const x=(await getDoc(path))?.x?.[id];if(!x||x.del)return;const set=hSet();
+    openModal({title:'تعديل مصروف',body:hFields(set,x),onOpen:hWireCat(set),onSubmit:async o=>{const nx=hRead(o);const nm=nx.date.slice(0,7);const rec={...x,...nx};
+      if(nm===m)await S.db.doc(path).update({x:{[id]:nx}});
+      else{await upsert(hPath(nm),{x:{[id]:rec}});await S.db.doc(path).update({x:{[id]:{del:true}}})}
+      await logAct('edit','home',hLabel(set,rec),{path:hPath(nm),id},x);toast('انحفظ')}})},
+  async 'h-del'(el){const m=el.dataset.m,id=el.dataset.id,path=hPath(m);const x=(await getDoc(path))?.x?.[id];if(!x||x.del)return;const set=hSet();
+    confirmBox('حذف المصروف',`متأكد تريد تحذف <b>${esc(hLabel(set,x))}</b>؟ تكدر ترجعه من سلة المحذوفات بالسجل.`,async()=>{
+      await S.db.doc(path).update({x:{[id]:{del:true}}});await logAct('delete','home',hLabel(set,x),{path,id},x);toast('انحذف')})},
+  async 'h-payfix'(el){const set=hSet();const fid=el.dataset.id;if(!set.fixed[fid])return;const fi={...set.fixed[fid],id:fid};const c=hCat(set,fi.cat);
+    openModal({title:'دفعت: '+esc(fi.n),submit:'سجّل الدفعة',body:`<div class="grid2">${f('المبلغ (دينار)',`<input name="amount" inputmode="numeric" required value="${fi.amount||''}">`)}${f('تاريخ الدفع',`<input name="date" type="date" required value="${hDefDate(S.hm||thisMonth)}">`)}${f('ملاحظة',`<input name="note" placeholder="اختياري">`,'full')}</div>
+      <p class="muted small" style="margin:0">ينسجل كمصروف بنوع «${esc(c.n)}${fi.sub?' · '+esc(fi.sub):''}». إذا غيّرت المبلغ، يصير هو المبلغ للأشهر الجاية.</p>`,
+      onSubmit:async o=>{const amount=Math.round(num(o.amount));if(!(amount>0))throw userErr('اكتب المبلغ.');if(!o.date)throw userErr('اختار التاريخ.');
+        const id=rid(),path=hPath(o.date.slice(0,7));const x={amount,date:o.date,cat:fi.cat,sub:fi.sub||'',note:String(o.note||'').trim()||fi.n,fx:fid,at:Date.now()};
+        await upsert(path,{x:{[id]:x}});if(amount!==+fi.amount)await hSaveSet({fixed:{[fid]:{amount}}});
+        await logAct('add','home',hLabel(set,x),{path,id});toast('انسجل: '+fi.n)}})},
+  async 'h-cat-edit'(el){const set=hSet();const id=el.dataset.id;const c=id?set.cats[id]:null;
+    openModal({title:c?'تعديل نوع':'نوع جديد',body:`<div class="grid2">${f('الاسم',`<input name="n" required value="${esc(c?.n||'')}">`)}${f('رمز (إيموجي)',`<input name="ic" maxlength="8" value="${esc(c?.ic||'📌')}">`)}
+      ${f('التفاصيل: كل وحدة بسطر',`<textarea name="subs" rows="7">${esc((c?.subs||[]).join('\n'))}</textarea>`,'full')}</div>`,
+      onSubmit:async o=>{const n=String(o.n||'').trim();if(!n)throw userErr('اكتب اسم النوع.');const subs=uniq(String(o.subs||'').split(/\n|،|,/));const cid=id||rid();
+        const rec={n,ic:String(o.ic||'').trim()||'📌',subs};if(!c){const all=Object.values(set.cats);rec.c=all.length;rec.o=Math.max(0,...all.map(x=>+x.o||0))+1}
+        await hSaveSet({cats:{[cid]:rec}});await logAct(c?'edit':'add','homeset','نوع: '+n,{cat:cid},c||null);toast('انحفظ')}})},
+  async 'h-cat-del'(el){const set=hSet();const id=el.dataset.id;const c=set.cats[id];if(!c)return;if(hList(set.cats).length<=1)throw userErr('لازم يبقى نوع واحد على الأقل.');
+    confirmBox('حذف نوع',`تحذف نوع <b>${esc(c.n)}</b>؟ المصاريف المسجلة بيه تبقى بحساباتك، بس ما يطلع بالقائمة للمصاريف الجديدة.`,async()=>{
+      await hSaveSet({cats:{[id]:{del:true}}});await logAct('delete','homeset','نوع: '+c.n,{cat:id},c);toast('انحذف')})},
+  async 'h-fix-edit'(el){const set=hSet();const id=el.dataset.id;const x=id?set.fixed[id]:null;const cat=x?.cat||hLiveCat(set,'house');
+    openModal({title:x?'تعديل مصروف ثابت':'مصروف ثابت جديد',body:`<div class="grid2">${f('الاسم',`<input name="n" required placeholder="مثلاً: اشتراك المولدة" value="${esc(x?.n||'')}">`)}${f('المبلغ الشهري (دينار)',`<input name="amount" inputmode="numeric" value="${x?.amount||''}" placeholder="اتركه فارغ إذا يتغير">`)}
+      ${f('النوع',`<select name="cat">${opts(hCatOpts(set,cat),cat)}</select>`)}${f('التفصيل',`<select name="sub">${hSubOpts(set,cat,x?.sub)}</select>`)}</div>`,onOpen:hWireCat(set),
+      onSubmit:async o=>{const n=String(o.n||'').trim();if(!n)throw userErr('اكتب الاسم.');const fid=id||rid();const rec={n,amount:Math.max(0,Math.round(num(o.amount))),cat:o.cat,sub:o.sub||''};
+        if(!x)rec.o=Math.max(0,...Object.values(set.fixed).map(v=>+v.o||0))+1;
+        await hSaveSet({fixed:{[fid]:rec}});await logAct(x?'edit':'add','homeset','ثابت: '+n,{fixed:fid},x||null);toast('انحفظ')}})},
+  async 'h-fix-del'(el){const set=hSet();const id=el.dataset.id;const x=set.fixed[id];if(!x)return;
+    confirmBox('حذف مصروف ثابت',`تحذف <b>${esc(x.n)}</b> من المصاريف الثابتة؟ الدفعات اللي سجلتها قبل تبقى.`,async()=>{
+      await hSaveSet({fixed:{[id]:{del:true}}});await logAct('delete','homeset','ثابت: '+x.n,{fixed:id},x);toast('انحذف')})},
+  async 'h-csv'(){const set=hSet();const m=S.hm||thisMonth;const xs=live((await getDoc(hPath(m)))?.x).sort((a,b)=>cmp(a.date,b.date)||(a.at||0)-(b.at||0));
+    if(!xs.length)throw userErr('ما مسجل مصاريف بهذا الشهر.');
+    const q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
+    const lines=[['التاريخ','النوع','التفصيل','الملاحظة','المبلغ (دينار)'],...xs.map(x=>[x.date,hCat(set,x.cat).n,x.sub,x.note,x.amount]),['','','','المجموع',sumBy(xs,'amount')]].map(r=>r.map(q).join(','));
+    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'}));a.download=`masarif-albait-${m}.csv`;
+    document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000)},
+});
+document.addEventListener('submit',async e=>{if(e.target.id!=='hForm')return;e.preventDefault();
+  if(!S.db||!perm().owner)return;const form=e.target,btn=form.querySelector('[type=submit]');const set=hSet();
+  let x;try{x=hRead(Object.fromEntries(new FormData(form)))}catch(err){toast(err.userMsg,true);form.querySelector('#hf_amt')?.focus();return}
+  x.at=Date.now();const id=rid(),path=hPath(x.date.slice(0,7));btn.disabled=true;
+  try{await upsert(path,{x:{[id]:x}});await logAct('add','home',hLabel(set,x),{path,id});
+    Object.assign(S.hd,{amt:'',sub:'',note:''});toast('انسجل '+money(x.amount)+(x.date.slice(0,7)!==S.hm?' بشهر '+monthLabel(x.date.slice(0,7)):''));render();document.getElementById('hf_amt')?.focus()}
+  catch(err){console.error(err);toast(err?.userMsg||'ما انحفظ. تأكد من الإنترنت وجرّب مرة ثانية.',true);btn.disabled=false}});
+let hqT;document.addEventListener('input',e=>{const id=e.target.id||'';
+  if(id==='hf_q'){S.hq=e.target.value;clearTimeout(hqT);hqT=setTimeout(render,200);return}
+  if(id.startsWith('hf_')){S.hd[id.slice(3)]=e.target.value;if(id==='hf_amt'){const t=document.getElementById('hf_amtTxt');if(t)t.textContent=num(e.target.value)?money(num(e.target.value)):''}}});
+document.addEventListener('change',e=>{const id=e.target.id||'';
+  if(id==='hmonth'&&e.target.value){S.hm=e.target.value;S.hcat='all';S.hd.date='';render()}
+  else if(id==='hf_cat'){S.hd.cat=e.target.value;S.hd.sub='';render()}
+  else if(id.startsWith('hf_')&&id!=='hf_q')S.hd[id.slice(3)]=e.target.value});
+
 S.authState='loading';
 firebase.auth().onAuthStateChanged(async u=>{
   if(userUnsub){userUnsub();userUnsub=null}stopPinned();resetData();

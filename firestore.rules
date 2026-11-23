@@ -47,6 +47,8 @@ service cloud.firestore {
     match /fixedpaid/{id}  { allow read, write: if isAdmin(); }
     match /suppliers/{id}  { allow read, write: if isAdmin(); }
     match /stock/{id}      { allow read, write: if isAdmin(); }
+    // مصاريف البيت: the owner's private home expenses. Nobody else, not even إدارة.
+    match /home/{id}       { allow read, write: if isOwner(); }
 
     match /patients/{id} { allow read, create, update: if isStaff(); allow delete: if isOwner(); }
     match /index/{id}    { allow read, create, update: if isStaff(); allow delete: if isAdmin(); }
