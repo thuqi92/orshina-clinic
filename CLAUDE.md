@@ -53,6 +53,10 @@ Reads are kept low: the app never loads whole collections except the small pinne
   - Fields: `name, kind, unit, min, deleted?, mv{id:{q:+in/−out, t:'in'|'use'|'adj', date, ref, note?, del?}}`. Quantity = sum of live `q`.
   - A buy line adds an `in` movement.
   - An injection session with `d.stk` adds a `use` movement (`d.stkMv`, `d.stkQ`). Editing, deleting or restoring the session updates that movement.
+- `home/*` (owner only, enforced in the rules) holds the owner's private home expenses (مصاريف البيت, the last tab after السجل, route `#house`):
+  - `home/settings`: `{cats{id:{n,ic,c,o,subs[],del?}}, fixed{id:{n,cat,sub,amount,o,del?}}}`. If the doc is missing, the page uses the defaults `HCAT0`/`HFIX0`, and the first settings write saves them.
+  - `home/m_{YYYY-MM}`: one doc per month, `x{id:{date,amount,cat,sub,note,fx?,at,del?}}`. `fx` links a payment to a fixed monthly item (shown as paid for that month). Paying a different amount becomes the item's new amount.
+  - Logged with kind `home` (restorable from the trash) or `homeset` (settings changes).
 - `log/{YYYY-MM-DD}/by/{uid}` is the activity log: `e{id:{at,who,act,kind,label,ref,before?}}`.
   - `act` is add | edit | delete | restore | purge.
   - Every data-changing action calls `logAct(...)`.
