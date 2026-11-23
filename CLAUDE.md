@@ -12,6 +12,8 @@ UI language is Iraqi Arabic, right-to-left. Money is IQD (plain integers, shown 
 
 ## Departments
 `dental` (الأسنان), `laser` (الليزر), `injection` (الحقن), `skin` (تنظيف البشرة). `general` is for expenses only.
+Dental is run as a separate business. The main day, home and month totals cover `CLK` (laser, injection, skin) plus general expenses and salaries.
+Dental income, cash/card, expenses, net and debts appear in their own box (`dentalBox`).
 Laser devices live in `settings/main.laserDevices` (`l1` Deka Again 1, `l2` Deka Again 2, `l3` Deka Motus, the old device kept for history).
 
 ## Login & roles
