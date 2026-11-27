@@ -796,7 +796,7 @@ function render(){
   if(focused==='q'||focused==='dq'||focused?.startsWith('hf_')){const q=document.getElementById(focused);if(q){q.focus();try{q.setSelectionRange(caret,caret)}catch(e){}}}
 }
 const ROUTES=['home','clients',...DK,'finance','hr','suppliers','log','house'];
-function route(){const h=location.hash.replace('#','');const nv=ROUTES.includes(h)?h:'home';if(nv!==S.view){S.dq='';S.dev='all'}S.view=nv;S.pid=null;S.eid=null;S.hset=false;S.sid=null;S.stid=null}
+function route(){const h=location.hash.replace('#','');const nv=ROUTES.includes(h)?h:'home';if(nv!==S.view){S.dq='';S.dev='all'}S.view=nv;S.pid=null;S.eid=null;S.hset=false;S.hsafe=false;S.sid=null;S.stid=null}
 addEventListener('hashchange',()=>{route();render();scrollTo(0,0)});
 
 /* ---------- modal & toast ---------- */
@@ -1266,7 +1266,7 @@ async function logAct(act,kind,label,ref={},before=null){
 }
 const LOG={key:'',loading:false,entries:[],err:'',stale:false,rows:[]};
 const LOG_ACT={add:['إضافة','good'],edit:['تعديل','warn'],delete:['حذف','bad'],restore:['استرجاع','acc'],purge:['حذف نهائي','bad']};
-const LOG_KIND={visit:'جلسة / زيارة',payment:'دفعة',expense:'مصروف',staffpay:'صرف لموظف',appt:'موعد',patient:'ملف زبون',employee:'موظف',settings:'إعدادات',teeth:'مخطط الأسنان',supplier:'شركة',suptx:'تعامل مع شركة',stock:'المخزن',home:'مصاريف البيت',homeset:'إعدادات مصاريف البيت'};
+const LOG_KIND={visit:'جلسة / زيارة',payment:'دفعة',expense:'مصروف',staffpay:'صرف لموظف',appt:'موعد',patient:'ملف زبون',employee:'موظف',settings:'إعدادات',teeth:'مخطط الأسنان',supplier:'شركة',suptx:'تعامل مع شركة',stock:'المخزن',home:'مصاريف البيت',homeset:'إعدادات مصاريف البيت',safe:'الخزن'};
 const RESTORABLE=new Set(['visit','payment','expense','staffpay','appt','patient','employee','suptx','home']);
 function logDays(){let a=S.logFrom||addDays(today(),-6),b=S.logTo||today();if(a>b)[a,b]=[b,a];const out=[];let d=b;while(d>=a&&out.length<31){out.push(d);d=addDays(d,-1)}return out}
 async function loadLog(force){
@@ -1325,6 +1325,7 @@ async function restoreEntry(en){const r=en.ref||{};
     case 'suptx':{const sp=(await getDoc('suppliers/'+r.sid));const x=sp?.tx?.[r.id];if(!x)throw userErr('ما لكينا التعامل.');if(!x.del)throw userErr('هذا التعامل مو محذوف.');
       await S.db.doc('suppliers/'+r.sid).update({tx:{[r.id]:{del:false}}});for(const i of x.items||[])if(i.itemId&&i.mvId)await S.db.doc('stock/'+i.itemId).update({mv:{[i.mvId]:{del:false}}}).catch(()=>{});
       if(x.expPath&&x.expId)await upsert(x.expPath,{e:{[x.expId]:{del:false}}}).catch(()=>{});break}
+    case 'safe':{const d=await getDoc('home/safe');const x=d?.[r.f]?.[r.id];if(!x)throw userErr('ما لكينا القيد.');if(!x.del)throw userErr('هذا القيد مو محذوف.');await S.db.doc('home/safe').update({[r.f]:{[r.id]:{del:false}}});break}
     case 'home':{const x=(await getDoc(r.path))?.x?.[r.id];if(!x)throw userErr('ما لكينا المصروف.');if(!x.del)throw userErr('هذا المصروف مو محذوف.');await S.db.doc(r.path).update({x:{[r.id]:{del:false}}});break}
     default:throw userErr('هذا النوع ما يرجع تلقائياً.');
   }
@@ -1546,6 +1547,7 @@ function hPct(a,b){if(!b)return '';const p=Math.round((a-b)/b*100);return p===0?
 
 function vHouse(){
   if(!perm().owner)return noAccess();
+  if(S.hsafe)return vSafe();
   const set=hSet();if(S.hset)return vHouseSet(set);
   const m=S.hm||thisMonth,pm=addMonths(m,-1);
   const cur=hMonth(m),prev=hMonth(pm);const cats=hList(set.cats),fixed=hList(set.fixed);
@@ -1566,7 +1568,7 @@ function vHouse(){
      <ul class="rows">${Object.entries(bs).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<li><span>${esc(k)}</span><b class="num">${money(v)}</b></li>`).join('')}</ul></div>`}
   const months=[0,1,2,3,4,5].map(i=>addMonths(m,i-5)).map(mm=>{const h=hMonth(mm);return{mm,ready:h.ready,t:sumBy(h.xs,'amount')}});const mmax=Math.max(1,...months.map(h=>h.t));
   return `<section class="hello"><div><div class="eyebrow">خاص بيك، محد غيرك يشوفه</div><h1>مصاريف البيت</h1><p class="muted" style="margin:2px 0 0">${monthLabel(m)}</p></div>
-   <div class="actions"><input type="month" id="hmonth" value="${m}" aria-label="الشهر" class="btn" style="padding:6px 10px"><button class="btn" data-act="h-settings">الأنواع والمصاريف الثابتة</button></div></section>
+   <div class="actions"><input type="month" id="hmonth" value="${m}" aria-label="الشهر" class="btn" style="padding:6px 10px"><button class="btn" data-act="h-settings">الأنواع والمصاريف الثابتة</button><button class="btn primary" data-act="safe-open">🔒 الخزن</button></div></section>
   <section class="panel"><div class="ph"><h2>سجّل مصروف</h2></div>
    <form id="hForm" class="hgrid" autocomplete="off">
     ${f(`المبلغ (دينار) <b id="hf_amtTxt" class="hamt num">${num(d.amt)?money(num(d.amt)):''}</b>`,`<input id="hf_amt" name="amount" inputmode="numeric" required placeholder="مثلاً 25000" value="${esc(d.amt)}">`)}
@@ -1597,6 +1599,39 @@ function vHouse(){
      <li><b>المجموع${fcat||q?' (المعروض)':''}</b><b class="num">${money(sumBy(rows,'amount'))}</b></li></ul>`:empty(q||fcat?'ماكو نتائج':'ما مسجل مصاريف بهذا الشهر',q||fcat?'':'سجّل أول مصروف من الخانة اللي فوك.')}</section>
   <section class="panel"><div class="ph"><h2>آخر 6 أشهر</h2></div><div class="bars">${months.map(h=>`<button class="bar hbar ${h.mm===m?'on':''}" data-act="h-month" data-m="${h.mm}"><span>${monthLabel(h.mm)}</span><div class="track"><div class="fill" style="width:${h.t/mmax*100}%;background:var(--accent)"></div></div><b class="num">${h.ready?money(h.t):'…'}</b></button>`).join('')}</div></section>`;
 }
+// الخزن: the owner's private safe inside مصاريف البيت (home/safe, owner-only by the home/* rule).
+// Kept apart from the home expense totals. tx = money in/out of the safe, st = items that still need settling (تصفية).
+const CUR={iqd:'د.ع',usd:'$'};
+const fmtCur=(a,c)=>c==='usd'?'$'+(+a||0).toLocaleString('en-US',{maximumFractionDigits:2}):money(a);
+const curPick=sel=>`<div class="pm" role="radiogroup" aria-label="العملة"><label><input type="radio" name="cur" value="iqd" ${sel!=='usd'?'checked':''}><span>دينار عراقي</span></label><label><input type="radio" name="cur" value="usd" ${sel==='usd'?'checked':''}><span>$ دولار</span></label></div>`;
+const bothCur=(xs,sign=x=>1)=>{const t={iqd:0,usd:0};xs.forEach(x=>t[x.cur==='usd'?'usd':'iqd']+=sign(x)*(+x.amount||0));return t};
+const curLine=t=>[t.usd?fmtCur(t.usd,'usd'):'',t.iqd?fmtCur(t.iqd,'iqd'):''].filter(Boolean).join(' + ')||'0';
+function safeRead(o){const cur=o.cur==='usd'?'usd':'iqd';const amount=cur==='usd'?Math.round(num(o.amount)*100)/100:Math.round(num(o.amount));
+  if(!(amount>0))throw userErr('اكتب المبلغ.');return{amount,cur,date:o.date||today(),note:String(o.note||'').trim()}}
+function safeForm(x={},withName){return `<div class="grid2">${withName?f('شنو الشي اللي يحتاج تصفية',`<input name="name" required value="${esc(x.name||'')}" placeholder="مثلاً حساب أبو علي، باقي سيارة…">`,'full'):''}
+  ${f('المبلغ',withPm2(`<input name="amount" inputmode="decimal" dir="ltr" required value="${x.amount??''}">`,curPick(x.cur)),'full')}
+  ${f('التاريخ',`<input type="date" name="date" value="${x.date||today()}">`)}${f('ملاحظة',`<input name="note" value="${esc(x.note||'')}">`)}</div>`}
+const withPm2=(input,pick)=>`<div class="amt">${input}${pick}</div>`;
+function vSafe(){
+  const d=D('home/safe');const ready=d!==undefined;
+  const tx=live(d?.tx).sort((a,b)=>cmp(b.date,a.date)||(b.at||0)-(a.at||0));const st=live(d?.st);
+  const open=st.filter(x=>!x.done).sort((a,b)=>cmp(a.date,b.date)),done=st.filter(x=>x.done).sort((a,b)=>(b.doneAt||0)-(a.doneAt||0));
+  const bal=bothCur(tx,x=>x.t==='out'?-1:1),need=bothCur(open);
+  const row=(x,kind)=>`<li><div><b>${kind==='tx'?(x.t==='out'?chip('➖ سحب','bad'):chip('➕ إيداع','good')):'🧾 '+esc(x.name||'')} ${kind==='tx'&&x.note?esc(x.note):''}</b><div class="meta"><span>${fmtDate(x.date)}</span>${kind!=='tx'&&x.note?`<span>${esc(x.note)}</span>`:''}${x.done?`<span>${chip('✅ تصفّت '+(x.doneAt?fmtDate(ymd(new Date(x.doneAt))):''),'good')}</span>`:''}</div></div>
+   <span class="actions"><b class="num" ${x.cur==='usd'?'dir="ltr"':''} style="${kind==='tx'?(x.t==='out'?'color:var(--bad)':'color:var(--good)'):''}">${kind==='tx'&&x.t==='out'?(x.cur==='usd'?'−'+fmtCur(x.amount,'usd'):`<bdi dir="ltr">−${(+x.amount||0).toLocaleString('en-US')}</bdi> د.ع`):fmtCur(x.amount,x.cur)}</b>${kind==='st'&&!x.done?`<button class="btn sm primary" data-act="safe-settle" data-id="${esc(x.id)}">تصفّت</button>`:''}${kind==='st'&&x.done?`<button class="btn sm ghost" data-act="safe-unsettle" data-id="${esc(x.id)}">رجّعها</button>`:''}<button class="btn sm ghost" data-act="safe-edit" data-f="${kind}" data-id="${esc(x.id)}">تعديل</button><button class="btn sm ghost" data-act="safe-del" data-f="${kind}" data-id="${esc(x.id)}">حذف</button></span></li>`;
+  return `<button class="back" data-act="safe-close">→ مصاريف البيت</button>
+  <section class="hello"><div><div class="eyebrow">🔒 خاص بيك، معزول عن مصاريف البيت ومحد غيرك يشوفه</div><h1>الخزن</h1></div>
+   <div class="actions"><button class="btn primary" data-act="safe-add" data-t="in">➕ إيداع</button><button class="btn" data-act="safe-add" data-t="out">➖ سحب</button><button class="btn" data-act="safe-st-add">🧾 شي يحتاج تصفية</button></div></section>
+  ${ready?'':loadingBox()}
+  <section class="stats">${stat('الموجود بالدولار',fmtCur(bal.usd,'usd'),'',bal.usd<0?'bad':'good')}${stat('الموجود بالعراقي',fmtCur(bal.iqd,'iqd'),'',bal.iqd<0?'bad':'good')}${stat('تحتاج تصفية',curLine(need),open.length+' شي',open.length?'bad':'')}</section>
+  <div class="hgrid2">
+   <section class="panel"><div class="ph"><h2>تحتاج تصفية</h2><button class="btn sm" data-act="safe-st-add">+ إضافة</button></div>
+    ${open.length?`<ul class="rows">${open.map(x=>row(x,'st')).join('')}<li><b>المجموع</b><b class="num">${curLine(need)}</b></li></ul>`:empty('ماكو شي يحتاج تصفية')}
+    ${done.length?`<details style="margin-top:10px"><summary class="muted small" style="cursor:pointer">المصفّاة (${done.length})</summary><ul class="rows">${done.slice(0,50).map(x=>row(x,'st')).join('')}</ul></details>`:''}</section>
+   <section class="panel"><div class="ph"><h2>حركة الخزن</h2><span class="muted small">${tx.length} قيد</span></div>
+    ${tx.length?`<ul class="rows">${tx.slice(0,200).map(x=>row(x,'tx')).join('')}</ul>`:empty('ما مسجل شي بالخزن','سجّل أول إيداع من الزر اللي فوك.')}</section>
+  </div>`;
+}
 function vHouseSet(set){const cats=hList(set.cats),fixed=hList(set.fixed);
   return `<button class="back" data-act="h-settings-close">→ رجوع لمصاريف البيت</button>
   <section class="hello"><div><h1>الأنواع والمصاريف الثابتة</h1><p class="muted" style="margin:2px 0 0">إذا تحذف نوع، مصاريفه القديمة تبقى بالحسابات.</p></div></section>
@@ -1610,6 +1645,24 @@ function vHouseSet(set){const cats=hList(set.cats),fixed=hList(set.fixed);
 
 Object.assign(A,{
   'h-settings'(){S.hset=true;render();scrollTo(0,0)},
+  'safe-open'(){S.hsafe=true;render();scrollTo(0,0)},
+  'safe-close'(){S.hsafe=false;render();scrollTo(0,0)},
+  'safe-add'(el){const t=el.dataset.t==='out'?'out':'in';openModal({title:t==='out'?'➖ سحب من الخزن':'➕ إيداع بالخزن',body:safeForm({}),
+    onSubmit:async o=>{const x={...safeRead(o),t,at:Date.now()};const id=rid();await upsert('home/safe',{tx:{[id]:x}});
+      await logAct('add','safe',`${t==='out'?'سحب':'إيداع'} ${fmtCur(x.amount,x.cur)}${x.note?' · '+x.note:''}`,{f:'tx',id});toast('انسجل')}})},
+  'safe-st-add'(){openModal({title:'🧾 شي يحتاج تصفية',body:safeForm({},true),
+    onSubmit:async o=>{const name=String(o.name||'').trim();if(!name)throw userErr('اكتب شنو الشي.');const x={...safeRead(o),name,at:Date.now()};const id=rid();await upsert('home/safe',{st:{[id]:x}});
+      await logAct('add','safe',`تصفية: ${name} · ${fmtCur(x.amount,x.cur)}`,{f:'st',id});toast('انضاف')}})},
+  async 'safe-edit'(el){const fk=el.dataset.f,id=el.dataset.id;const x=(await getDoc('home/safe'))?.[fk]?.[id];if(!x)return;
+    openModal({title:'تعديل',body:safeForm(x,fk==='st'),onSubmit:async o=>{const nx=safeRead(o);if(fk==='st'){nx.name=String(o.name||'').trim();if(!nx.name)throw userErr('اكتب شنو الشي.')}
+      await S.db.doc('home/safe').update({[fk]:{[id]:nx}});await logAct('edit','safe',`${fk==='st'?'تصفية: '+nx.name:(x.t==='out'?'سحب':'إيداع')} · ${fmtCur(nx.amount,nx.cur)}`,{f:fk,id},x);toast('انحفظ')}})},
+  async 'safe-del'(el){const fk=el.dataset.f,id=el.dataset.id;const x=(await getDoc('home/safe'))?.[fk]?.[id];if(!x)return;
+    confirmBox('حذف',`متأكد تريد تحذف <b class="num">${fmtCur(x.amount,x.cur)}</b>${x.name?' ('+esc(x.name)+')':''}؟ تكدر ترجعه من سلة المحذوفات.`,async()=>{await S.db.doc('home/safe').update({[fk]:{[id]:{del:true}}});
+      await logAct('delete','safe',`${fk==='st'?'تصفية: '+x.name:(x.t==='out'?'سحب':'إيداع')} · ${fmtCur(x.amount,x.cur)}`,{f:fk,id},x);toast('انحذف')})},
+  async 'safe-settle'(el){const id=el.dataset.id;const x=(await getDoc('home/safe'))?.st?.[id];if(!x)return;
+    await S.db.doc('home/safe').update({st:{[id]:{done:true,doneAt:Date.now()}}});await logAct('edit','safe',`تصفّت: ${x.name} · ${fmtCur(x.amount,x.cur)}`,{f:'st',id},x);toast('تصفّت ✅')},
+  async 'safe-unsettle'(el){const id=el.dataset.id;const x=(await getDoc('home/safe'))?.st?.[id];if(!x)return;
+    await S.db.doc('home/safe').update({st:{[id]:{done:false,doneAt:null}}});await logAct('edit','safe',`رجعت تحتاج تصفية: ${x.name}`,{f:'st',id},x);toast('رجعت')},
   'h-settings-close'(){S.hset=false;render();scrollTo(0,0)},
   'h-cat'(el){const id=el.dataset.id;S.hcat=id===S.hcat?'all':id;render()},
   'h-month'(el){S.hm=el.dataset.m;S.hcat='all';S.hd.date='';render()},
